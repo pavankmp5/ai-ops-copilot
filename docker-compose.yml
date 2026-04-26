@@ -1,17 +1,20 @@
 services:
   postgres:
     image: postgres:16-alpine
+    env_file:
+      - .env
     container_name: ai-ops-postgres
-    environment:
-      POSTGRES_DB: aiops
-      POSTGRES_USER: aiops
-      POSTGRES_PASSWORD: aiops_dev_password
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   backend:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     build:
       context: .
       dockerfile: Dockerfile
@@ -23,9 +26,8 @@ services:
     env_file:
       - .env
     environment:
-      ENVIRONMENT: production
+      ENVIRONMENT: development
       LOG_JSON: "true"
-      DATABASE_URL: postgresql://aiops:aiops_dev_password@postgres:5432/aiops
       STORAGE_PROVIDER: local
     volumes:
       - ./data:/app/data
@@ -42,8 +44,8 @@ services:
     ports:
       - "8080:80"
     environment:
-      API_BASE_URL: http://localhost:8000
-      DOCS_URL: http://localhost:8000/docs
+      API_BASE_URL: http://backend:8000
+      DOCS_URL: http://backend:8000/docs
 
 volumes:
   postgres_data:
