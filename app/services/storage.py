@@ -83,7 +83,18 @@ def storage_health() -> dict:
         except Exception:
             return {"provider": "azure_blob", "available": False}
 
-    return {
-        "provider": "local",
-        "available": os.path.isdir(settings.data_dir),
-    }
+    # For local storage, validate that we can create and write in the target directory.
+    probe_file = os.path.join(settings.data_dir, ".healthcheck_write_probe")
+    try:
+        os.makedirs(settings.data_dir, exist_ok=True)
+        with open(probe_file, "wb") as file_handle:
+            file_handle.write(b"ok")
+        os.remove(probe_file)
+        return {"provider": "local", "available": True}
+    except Exception:
+        if os.path.exists(probe_file):
+            try:
+                os.remove(probe_file)
+            except Exception:
+                pass
+        return {"provider": "local", "available": False}

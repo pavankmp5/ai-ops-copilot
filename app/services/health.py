@@ -49,14 +49,31 @@ def get_readiness_status() -> dict:
         "storage_available": checks["storage_available"],
         "jwt_secret_configured": checks["jwt_secret_configured"],
     }
-    if settings.health_require_llm:
+    require_llm = settings.health_require_llm or settings.environment == "production"
+    require_rag_dependencies = settings.environment in {"staging", "production"} and settings.rag_enabled
+
+    if require_llm:
         required_checks["openrouter_key_configured"] = checks["openrouter_key_configured"]
+    if require_rag_dependencies:
+        required_checks["rag_dependencies_available"] = checks["rag_dependencies_available"]
     ready = all(required_checks.values())
 
-    logger.info("Readiness evaluated: ready=%s checks=%s", ready, checks)
+    logger.info(
+        "Readiness evaluated: ready=%s environment=%s required_checks=%s checks=%s",
+        ready,
+        settings.environment,
+        required_checks,
+        checks,
+    )
     return {
         "status": "ready" if ready else "degraded",
         "checks": checks,
+        "required_checks": required_checks,
+        "policy": {
+            "environment": settings.environment,
+            "require_llm": require_llm,
+            "require_rag_dependencies": require_rag_dependencies,
+        },
     }
 
 

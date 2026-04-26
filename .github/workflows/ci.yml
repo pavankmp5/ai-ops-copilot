@@ -14,16 +14,21 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  CI_JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY != '' && secrets.JWT_SECRET_KEY || 'ci-smoke-secret' }}
+
 jobs:
   backend-smoke:
     name: Backend Smoke Test
     runs-on: ubuntu-latest
     env:
       ENVIRONMENT: development
-      JWT_SECRET_KEY: ci-smoke-secret
+      JWT_SECRET_KEY: ${{ env.CI_JWT_SECRET_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       DATABASE_URL: sqlite:///ai_ops_copilot.db
       STORAGE_PROVIDER: local
       RAG_ENABLED: "false"
+      SMOKE_READINESS_MODE: strict
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,11 +84,13 @@ jobs:
         run: docker build -t ai-ops-frontend-ci ./frontend
 
       - name: Run backend container
+        env:
+          JWT_SECRET_KEY: ${{ env.CI_JWT_SECRET_KEY }}
         run: |
           docker run -d --name ai-ops-backend-ci \
             -p 8000:8000 \
             -e ENVIRONMENT=development \
-            -e JWT_SECRET_KEY=ci-smoke-secret \
+            -e JWT_SECRET_KEY="$JWT_SECRET_KEY" \
             -e DATABASE_URL=sqlite:///ai_ops_copilot.db \
             -e STORAGE_PROVIDER=local \
             -e RAG_ENABLED=false \
