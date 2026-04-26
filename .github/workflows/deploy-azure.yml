@@ -1,0 +1,157 @@
+name: Deploy Azure Container Apps
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-azure-production
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Backend + Frontend
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Ensure Container Apps extension
+        run: |
+          az extension add --name containerapp --upgrade
+
+      - name: Deploy backend from source
+        run: |
+          az containerapp up \
+            --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --environment "${{ secrets.AZURE_CONTAINERAPPS_ENV }}" \
+            --source . \
+            --ingress external \
+            --target-port 8000
+
+      - name: Configure backend secrets
+        run: |
+          az containerapp secret set \
+            --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --secrets \
+              jwt-secret-key="${{ secrets.JWT_SECRET_KEY }}" \
+              openrouter-api-key="${{ secrets.OPENROUTER_API_KEY }}" \
+              database-url="${{ secrets.DATABASE_URL }}" \
+              blob-connection="${{ secrets.AZURE_BLOB_CONNECTION_STRING }}"
+
+      - name: Configure backend environment
+        run: |
+          az containerapp update \
+            --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --set-env-vars \
+              ENVIRONMENT=production \
+              LOG_JSON=true \
+              JWT_SECRET_KEY=secretref:jwt-secret-key \
+              OPENROUTER_API_KEY=secretref:openrouter-api-key \
+              DATABASE_URL=secretref:database-url \
+              STORAGE_PROVIDER=azure_blob \
+              AZURE_BLOB_CONNECTION_STRING=secretref:blob-connection \
+              AZURE_BLOB_CONTAINER="${{ secrets.AZURE_BLOB_CONTAINER }}" \
+              OPENROUTER_BASE_URL=https://openrouter.ai/api/v1 \
+              LLM_MODEL=openai/gpt-4o-mini
+
+      - name: Fetch backend URL
+        id: backend_url
+        run: |
+          BACKEND_FQDN=$(az containerapp show \
+            --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "backend_fqdn=$BACKEND_FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy frontend from source
+        working-directory: frontend
+        run: |
+          az containerapp up \
+            --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --environment "${{ secrets.AZURE_CONTAINERAPPS_ENV }}" \
+            --source . \
+            --ingress external \
+            --target-port 80
+
+      - name: Configure frontend environment
+        run: |
+          az containerapp update \
+            --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --set-env-vars \
+              API_BASE_URL=https://${{ steps.backend_url.outputs.backend_fqdn }} \
+              DOCS_URL=https://${{ steps.backend_url.outputs.backend_fqdn }}/docs
+
+      - name: Fetch frontend URL
+        id: frontend_url
+        run: |
+          FRONTEND_FQDN=$(az containerapp show \
+            --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "frontend_fqdn=$FRONTEND_FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Update backend CORS
+        run: |
+          az containerapp update \
+            --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --set-env-vars CORS_ALLOWED_ORIGINS=https://${{ steps.frontend_url.outputs.frontend_fqdn }}
+
+      - name: Deployment summary
+        run: |
+          echo "Backend: https://${{ steps.backend_url.outputs.backend_fqdn }}"
+          echo "Frontend: https://${{ steps.frontend_url.outputs.frontend_fqdn }}"
+
+      - name: Verify backend health
+        run: |
+          for i in {1..30}; do
+            if curl -fsS "https://${{ steps.backend_url.outputs.backend_fqdn }}/health" > /dev/null; then
+              echo "Backend /health is OK."
+              break
+            fi
+            sleep 5
+            if [ "$i" -eq 30 ]; then
+              echo "Backend health check failed."
+              exit 1
+            fi
+          done
+          curl -fsS "https://${{ steps.backend_url.outputs.backend_fqdn }}/readyz" > /dev/null
+          echo "Backend /readyz is OK."
+
+      - name: Verify frontend health
+        run: |
+          for i in {1..30}; do
+            if curl -fsS "https://${{ steps.frontend_url.outputs.frontend_fqdn }}/" > /dev/null; then
+              echo "Frontend is reachable."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Frontend health check failed."
+          exit 1

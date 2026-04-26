@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-smoke:
+    name: Backend Smoke Test
+    runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT: development
+      JWT_SECRET_KEY: ci-smoke-secret
+      DATABASE_URL: sqlite:///ai_ops_copilot.db
+      STORAGE_PROVIDER: local
+      RAG_ENABLED: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run backend smoke test
+        run: python scripts/smoke_test.py
+
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+  docker-build:
+    name: Docker Build + Runtime Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t ai-ops-backend-ci .
+
+      - name: Build frontend image
+        run: docker build -t ai-ops-frontend-ci ./frontend
+
+      - name: Run backend container
+        run: |
+          docker run -d --name ai-ops-backend-ci \
+            -p 8000:8000 \
+            -e ENVIRONMENT=development \
+            -e JWT_SECRET_KEY=ci-smoke-secret \
+            -e DATABASE_URL=sqlite:///ai_ops_copilot.db \
+            -e STORAGE_PROVIDER=local \
+            -e RAG_ENABLED=false \
+            ai-ops-backend-ci
+
+      - name: Wait for backend health
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null; then
+              echo "Backend is healthy."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend failed health check."
+          docker logs ai-ops-backend-ci
+          exit 1
+
+      - name: Run frontend container
+        run: |
+          docker run -d --name ai-ops-frontend-ci \
+            -p 8080:80 \
+            -e API_BASE_URL=http://127.0.0.1:8000 \
+            -e DOCS_URL=http://127.0.0.1:8000/docs \
+            ai-ops-frontend-ci
+
+      - name: Wait for frontend health
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/ > /dev/null; then
+              echo "Frontend is healthy."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Frontend failed health check."
+          docker logs ai-ops-frontend-ci
+          exit 1
+
+      - name: Cleanup containers
+        if: always()
+        run: |
+          docker rm -f ai-ops-frontend-ci ai-ops-backend-ci >/dev/null 2>&1 || true

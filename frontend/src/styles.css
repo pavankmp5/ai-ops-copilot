@@ -1,0 +1,233 @@
+:root {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #122033;
+  background:
+    radial-gradient(circle at top, rgba(98, 168, 229, 0.18), transparent 35%),
+    linear-gradient(180deg, #f6fbff 0%, #edf4f8 100%);
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 48px 20px 64px;
+}
+
+.hero {
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.78rem;
+  color: #2d6da3;
+}
+
+.hero h1,
+.panel h2 {
+  margin: 0;
+}
+
+.hero-copy,
+.panel p {
+  color: #4e6175;
+}
+
+a {
+  color: #0f6eb5;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(18, 32, 51, 0.08);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 14px 32px rgba(18, 32, 51, 0.08);
+  backdrop-filter: blur(8px);
+  margin-bottom: 20px;
+}
+
+.panel-header,
+.account-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.form-grid,
+.field {
+  display: grid;
+  gap: 10px;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.field span {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  border: 1px solid #c9d7e4;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fff;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.primary-button,
+.secondary-button {
+  border: none;
+  border-radius: 12px;
+  padding: 12px 18px;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.primary-button {
+  background: linear-gradient(135deg, #1176c2, #19a0c1);
+  color: white;
+}
+
+.secondary-button {
+  background: #e8f0f6;
+  color: #16314d;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.primary-button:hover,
+.secondary-button:hover {
+  transform: translateY(-1px);
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+  transform: none;
+}
+
+.status {
+  margin: 8px 0 0;
+  color: #2c4d68;
+}
+
+.success {
+  color: #0f6b41;
+}
+
+.error {
+  color: #b3261e;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #eaf3fb;
+  color: #1c527f;
+  padding: 6px 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.pill-success {
+  background: #e7f7ef;
+  color: #1b6c45;
+}
+
+.pill-warning {
+  background: #fff1db;
+  color: #8a5a00;
+}
+
+.info-card {
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #f7fbfe;
+  border: 1px solid #d7e5ef;
+}
+
+.response-card {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 14px;
+  background: #f4f8fb;
+  border: 1px solid #d7e5ef;
+  white-space: pre-wrap;
+}
+
+.metrics-row,
+.response-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.response-text {
+  margin: 16px 0;
+}
+
+.system-status-card {
+  background: #f9fcff;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 28px 14px 48px;
+  }
+
+  .panel-header,
+  .account-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

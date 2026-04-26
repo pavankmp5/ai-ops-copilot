@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Databases
+*.db
+*.sqlite3
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Virtual envs
+venv/
+.venv/
+
+# Node (frontend)
+node_modules/
+
+# Local runtime data (important for your setup)
+logs/
+vector_db/
+data/
+
+# Git
+.git
+.gitignore
