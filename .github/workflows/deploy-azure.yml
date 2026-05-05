@@ -124,8 +124,7 @@ jobs:
               --environment "${{ secrets.AZURE_CONTAINERAPPS_ENV }}" \
               --source . \
               --ingress external \
-              --target-port 8000 \
-              --query properties.latestRevisionName -o tsv; then
+              --target-port 8000; then
               exit 0
             fi
             echo "Backend deploy attempt $i failed. Retrying..."
@@ -184,8 +183,7 @@ jobs:
               --environment "${{ secrets.AZURE_CONTAINERAPPS_ENV }}" \
               --source . \
               --ingress external \
-              --target-port 80 \
-              --query properties.latestRevisionName -o tsv; then
+              --target-port 80; then
               exit 0
             fi
             echo "Frontend deploy attempt $i failed. Retrying..."
