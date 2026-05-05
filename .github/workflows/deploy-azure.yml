@@ -31,24 +31,95 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
+      - name: Validate required deployment secrets
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINERAPPS_ENV: ${{ secrets.AZURE_CONTAINERAPPS_ENV }}
+          AZURE_BACKEND_APP_NAME: ${{ secrets.AZURE_BACKEND_APP_NAME }}
+          AZURE_FRONTEND_APP_NAME: ${{ secrets.AZURE_FRONTEND_APP_NAME }}
+          AZURE_BLOB_CONNECTION_STRING: ${{ secrets.AZURE_BLOB_CONNECTION_STRING }}
+          AZURE_BLOB_CONTAINER: ${{ secrets.AZURE_BLOB_CONTAINER }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          missing=0
+          for key in \
+            AZURE_CLIENT_ID \
+            AZURE_TENANT_ID \
+            AZURE_SUBSCRIPTION_ID \
+            AZURE_RESOURCE_GROUP \
+            AZURE_CONTAINERAPPS_ENV \
+            AZURE_BACKEND_APP_NAME \
+            AZURE_FRONTEND_APP_NAME \
+            AZURE_BLOB_CONNECTION_STRING \
+            AZURE_BLOB_CONTAINER \
+            OPENROUTER_API_KEY \
+            JWT_SECRET_KEY \
+            DATABASE_URL; do
+            if [ -z "${!key}" ]; then
+              echo "Missing required secret: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Azure Login
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Ensure Container Apps extension
         run: |
           az extension add --name containerapp --upgrade
+          az provider register --namespace Microsoft.App
+          az provider register --namespace Microsoft.OperationalInsights
+
+      - name: Validate backend DATABASE_URL secret
+        run: |
+          DB_URL="${{ secrets.DATABASE_URL }}"
+          if [ -z "$DB_URL" ]; then
+            echo "DATABASE_URL secret is empty."
+            exit 1
+          fi
+
+          if echo "$DB_URL" | grep -Eq '@(localhost|127\.0\.0\.1|postgres)(:|/|\?)'; then
+            echo "DATABASE_URL points to a local/container host (localhost/127.0.0.1/postgres)."
+            echo "Use Azure PostgreSQL FQDN before deploying."
+            exit 1
+          fi
+
+          if ! echo "$DB_URL" | grep -q 'sslmode=require'; then
+            echo "DATABASE_URL must include sslmode=require for Azure PostgreSQL."
+            exit 1
+          fi
 
       - name: Deploy backend from source
         run: |
-          az containerapp up \
-            --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
-            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-            --environment "${{ secrets.AZURE_CONTAINERAPPS_ENV }}" \
-            --source . \
-            --ingress external \
-            --target-port 8000
+          set -e
+          for i in 1 2 3; do
+            if az containerapp up \
+              --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+              --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+              --environment "${{ secrets.AZURE_CONTAINERAPPS_ENV }}" \
+              --source . \
+              --ingress external \
+              --target-port 8000 \
+              --query properties.latestRevisionName -o tsv; then
+              exit 0
+            fi
+            echo "Backend deploy attempt $i failed. Retrying..."
+            sleep 20
+          done
+          echo "Backend deploy failed after retries."
+          exit 1
 
       - name: Configure backend secrets
         run: |
@@ -69,6 +140,8 @@ jobs:
             --set-env-vars \
               ENVIRONMENT=production \
               LOG_JSON=true \
+              DOCS_ENABLED=false \
+              HEALTH_REQUIRE_LLM=true \
               JWT_SECRET_KEY=secretref:jwt-secret-key \
               OPENROUTER_API_KEY=secretref:openrouter-api-key \
               DATABASE_URL=secretref:database-url \
@@ -90,13 +163,23 @@ jobs:
       - name: Deploy frontend from source
         working-directory: frontend
         run: |
-          az containerapp up \
-            --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
-            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-            --environment "${{ secrets.AZURE_CONTAINERAPPS_ENV }}" \
-            --source . \
-            --ingress external \
-            --target-port 80
+          set -e
+          for i in 1 2 3; do
+            if az containerapp up \
+              --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
+              --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+              --environment "${{ secrets.AZURE_CONTAINERAPPS_ENV }}" \
+              --source . \
+              --ingress external \
+              --target-port 80 \
+              --query properties.latestRevisionName -o tsv; then
+              exit 0
+            fi
+            echo "Frontend deploy attempt $i failed. Retrying..."
+            sleep 20
+          done
+          echo "Frontend deploy failed after retries."
+          exit 1
 
       - name: Configure frontend environment
         run: |
@@ -143,6 +226,18 @@ jobs:
           done
           curl -fsS "https://${{ steps.backend_url.outputs.backend_fqdn }}/readyz" > /dev/null
           echo "Backend /readyz is OK."
+
+      - name: Capture backend revision diagnostics on failure
+        if: failure()
+        run: |
+          az containerapp revision list \
+            --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            -o table || true
+          az containerapp logs show \
+            --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --tail 200 || true
 
       - name: Verify frontend health
         run: |
