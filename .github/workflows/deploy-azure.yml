@@ -79,8 +79,18 @@ jobs:
       - name: Ensure Container Apps extension
         run: |
           az extension add --name containerapp --upgrade
-          az provider register --namespace Microsoft.App
-          az provider register --namespace Microsoft.OperationalInsights
+          app_state=$(az provider show --namespace Microsoft.App --query registrationState -o tsv || echo "Unknown")
+          logs_state=$(az provider show --namespace Microsoft.OperationalInsights --query registrationState -o tsv || echo "Unknown")
+
+          if [ "$app_state" != "Registered" ] || [ "$logs_state" != "Registered" ]; then
+            echo "Required Azure providers are not fully registered."
+            echo "Microsoft.App: $app_state"
+            echo "Microsoft.OperationalInsights: $logs_state"
+            echo "Ask an Azure subscription owner to run:"
+            echo "  az provider register --namespace Microsoft.App"
+            echo "  az provider register --namespace Microsoft.OperationalInsights"
+            exit 1
+          fi
 
       - name: Validate backend DATABASE_URL secret
         run: |
