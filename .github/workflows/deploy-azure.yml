@@ -131,6 +131,7 @@ jobs:
           ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)
           ACR_USERNAME=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
           ACR_PASSWORD=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
+          echo "::add-mask::$ACR_PASSWORD"
           echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
           echo "acr_login_server=$ACR_LOGIN_SERVER" >> "$GITHUB_OUTPUT"
           echo "acr_username=$ACR_USERNAME" >> "$GITHUB_OUTPUT"
@@ -145,6 +146,10 @@ jobs:
           echo "image=$BACKEND_IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Deploy backend from image
+        env:
+          ACR_LOGIN_SERVER: ${{ steps.acr.outputs.acr_login_server }}
+          ACR_USERNAME: ${{ steps.acr.outputs.acr_username }}
+          ACR_PASSWORD: ${{ steps.acr.outputs.acr_password }}
         run: |
           if az containerapp show \
             --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
@@ -152,9 +157,9 @@ jobs:
             az containerapp registry set \
               --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
               --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-              --server "${{ steps.acr.outputs.acr_login_server }}" \
-              --username "${{ steps.acr.outputs.acr_username }}" \
-              --password "${{ steps.acr.outputs.acr_password }}"
+              --server "$ACR_LOGIN_SERVER" \
+              --username "$ACR_USERNAME" \
+              --password "$ACR_PASSWORD"
             az containerapp update \
               --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
               --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
@@ -221,6 +226,10 @@ jobs:
           echo "image=$FRONTEND_IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Deploy frontend from image
+        env:
+          ACR_LOGIN_SERVER: ${{ steps.acr.outputs.acr_login_server }}
+          ACR_USERNAME: ${{ steps.acr.outputs.acr_username }}
+          ACR_PASSWORD: ${{ steps.acr.outputs.acr_password }}
         run: |
           if az containerapp show \
             --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
@@ -228,9 +237,9 @@ jobs:
             az containerapp registry set \
               --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
               --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-              --server "${{ steps.acr.outputs.acr_login_server }}" \
-              --username "${{ steps.acr.outputs.acr_username }}" \
-              --password "${{ steps.acr.outputs.acr_password }}"
+              --server "$ACR_LOGIN_SERVER" \
+              --username "$ACR_USERNAME" \
+              --password "$ACR_PASSWORD"
             az containerapp update \
               --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
               --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
