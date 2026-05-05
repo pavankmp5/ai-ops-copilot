@@ -19,6 +19,9 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deploy:
     name: Deploy Backend + Frontend
@@ -240,6 +243,12 @@ jobs:
       - name: Capture backend revision diagnostics on failure
         if: failure()
         run: |
+          if ! az containerapp show \
+            --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" > /dev/null 2>&1; then
+            echo "Backend container app does not exist yet; skipping revision/log diagnostics."
+            exit 0
+          fi
           az containerapp revision list \
             --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
             --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
