@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ENVIRONMENT: development
-      JWT_SECRET_KEY: ${{ secrets.CI_JWT_SECRET_KEY }}
+      JWT_SECRET_KEY: ${{ env.CI_JWT_SECRET_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       DATABASE_URL: sqlite:///ai_ops_copilot.db
       STORAGE_PROVIDER: local
@@ -31,7 +31,7 @@ jobs:
       SMOKE_READINESS_MODE: strict
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -55,10 +55,10 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Build backend image
         run: docker build -t ai-ops-backend-ci .

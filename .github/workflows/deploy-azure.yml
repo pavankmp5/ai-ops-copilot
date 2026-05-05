@@ -30,7 +30,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
@@ -114,24 +114,56 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy backend from source
+      - name: Resolve ACR and login
+        id: acr
         run: |
-          set -e
-          for i in 1 2 3; do
-            if az containerapp up \
+          ACR_NAME="${{ secrets.AZURE_ACR_NAME }}"
+          if [ -z "$ACR_NAME" ]; then
+            ACR_NAME="ca3e2619e171acr"
+          fi
+          az acr show --name "$ACR_NAME" --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" > /dev/null
+          az acr update --name "$ACR_NAME" --admin-enabled true
+          az acr login --name "$ACR_NAME"
+          ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)
+          ACR_USERNAME=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
+          ACR_PASSWORD=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
+          echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
+          echo "acr_login_server=$ACR_LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+          echo "acr_username=$ACR_USERNAME" >> "$GITHUB_OUTPUT"
+          echo "acr_password=$ACR_PASSWORD" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push backend image
+        id: backend_image
+        run: |
+          BACKEND_IMAGE="${{ steps.acr.outputs.acr_login_server }}/ai-ops-backend:${{ github.sha }}"
+          docker build -t "$BACKEND_IMAGE" .
+          docker push "$BACKEND_IMAGE"
+          echo "image=$BACKEND_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy backend from image
+        run: |
+          if az containerapp show \
+            --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" > /dev/null 2>&1; then
+            az containerapp update \
+              --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
+              --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+              --image "${{ steps.backend_image.outputs.image }}" \
+              --registry-server "${{ steps.acr.outputs.acr_login_server }}" \
+              --registry-username "${{ steps.acr.outputs.acr_username }}" \
+              --registry-password "${{ steps.acr.outputs.acr_password }}"
+          else
+            az containerapp create \
               --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
               --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
               --environment "${{ secrets.AZURE_CONTAINERAPPS_ENV }}" \
-              --source . \
+              --image "${{ steps.backend_image.outputs.image }}" \
+              --target-port 8000 \
               --ingress external \
-              --target-port 8000; then
-              exit 0
-            fi
-            echo "Backend deploy attempt $i failed. Retrying..."
-            sleep 20
-          done
-          echo "Backend deploy failed after retries."
-          exit 1
+              --registry-server "${{ steps.acr.outputs.acr_login_server }}" \
+              --registry-username "${{ steps.acr.outputs.acr_username }}" \
+              --registry-password "${{ steps.acr.outputs.acr_password }}"
+          fi
 
       - name: Configure backend secrets
         run: |
@@ -172,25 +204,39 @@ jobs:
             --query properties.configuration.ingress.fqdn -o tsv)
           echo "backend_fqdn=$BACKEND_FQDN" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy frontend from source
+      - name: Build and push frontend image
+        id: frontend_image
         working-directory: frontend
         run: |
-          set -e
-          for i in 1 2 3; do
-            if az containerapp up \
+          FRONTEND_IMAGE="${{ steps.acr.outputs.acr_login_server }}/ai-ops-frontend:${{ github.sha }}"
+          docker build -t "$FRONTEND_IMAGE" .
+          docker push "$FRONTEND_IMAGE"
+          echo "image=$FRONTEND_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy frontend from image
+        run: |
+          if az containerapp show \
+            --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" > /dev/null 2>&1; then
+            az containerapp update \
+              --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
+              --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+              --image "${{ steps.frontend_image.outputs.image }}" \
+              --registry-server "${{ steps.acr.outputs.acr_login_server }}" \
+              --registry-username "${{ steps.acr.outputs.acr_username }}" \
+              --registry-password "${{ steps.acr.outputs.acr_password }}"
+          else
+            az containerapp create \
               --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
               --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
               --environment "${{ secrets.AZURE_CONTAINERAPPS_ENV }}" \
-              --source . \
+              --image "${{ steps.frontend_image.outputs.image }}" \
+              --target-port 80 \
               --ingress external \
-              --target-port 80; then
-              exit 0
-            fi
-            echo "Frontend deploy attempt $i failed. Retrying..."
-            sleep 20
-          done
-          echo "Frontend deploy failed after retries."
-          exit 1
+              --registry-server "${{ steps.acr.outputs.acr_login_server }}" \
+              --registry-username "${{ steps.acr.outputs.acr_username }}" \
+              --registry-password "${{ steps.acr.outputs.acr_password }}"
+          fi
 
       - name: Configure frontend environment
         run: |
