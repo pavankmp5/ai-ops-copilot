@@ -52,9 +52,9 @@ def startup_checks():
         os.makedirs(settings.data_dir, exist_ok=True)
     print("Startup checks: Creating vector_db directory")
     os.makedirs(settings.vector_db_dir, exist_ok=True)
-    print("Startup checks: Starting database initialization")
-    init_db()
-    print("Startup checks: Database initialization complete")
+    print("Startup checks: Minimal startup complete, init_db() is commented out.")
+    # init_db()
+    # print("Startup checks: Database initialization complete")
     logging.getLogger("app.startup").info(
         "Startup complete environment=%s storage_provider=%s vector_db_dir=%s database_url=%s",
         settings.environment,
