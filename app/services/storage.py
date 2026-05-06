@@ -14,7 +14,14 @@ def _dataset_blob_name(dataset_id: str) -> str:
     return f"datasets/{_dataset_filename(dataset_id)}"
 
 
+_blob_container_client = None
+
+
 def _get_blob_client():
+    global _blob_container_client
+    if _blob_container_client is not None:
+        return _blob_container_client
+
     settings = get_settings()
     if settings.storage_provider != "azure_blob":
         raise RuntimeError("Azure Blob storage is not enabled.")
@@ -29,7 +36,8 @@ def _get_blob_client():
         container.create_container()
     except Exception:
         pass
-    return container
+    _blob_container_client = container
+    return _blob_container_client
 
 
 def dataset_exists(dataset_id: str) -> bool:

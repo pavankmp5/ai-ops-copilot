@@ -167,7 +167,9 @@ GitHub Actions workflows are configured in `.github/workflows`:
 
 Add these repository secrets before running deployment:
 
-- `AZURE_CREDENTIALS`
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
 - `AZURE_RESOURCE_GROUP`
 - `AZURE_CONTAINERAPPS_ENV`
 - `AZURE_BACKEND_APP_NAME`

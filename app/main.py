@@ -63,6 +63,9 @@ def startup_checks():
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    if request.url.path in ["/health", "/healthz", "/readyz"]:
+        return await call_next(request)
+
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
     remaining, window_seconds = enforce_rate_limit(request)

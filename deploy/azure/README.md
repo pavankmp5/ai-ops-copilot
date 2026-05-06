@@ -16,7 +16,9 @@ Official references:
 
 If you use `.github/workflows/deploy-azure.yml`, configure these repository secrets:
 
-- `AZURE_CREDENTIALS`
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
 - `AZURE_RESOURCE_GROUP`
 - `AZURE_CONTAINERAPPS_ENV`
 - `AZURE_BACKEND_APP_NAME`
@@ -306,3 +308,21 @@ Check:
 - RAG store: Chroma is still local to the container unless you replace it with a shared vector store later
 
 That means the biggest remaining scale constraint after this pass is vector storage, not auth/data metadata.
+
+## Troubleshooting `10054` (connection reset)
+
+On Windows, `10054` typically means "connection reset by peer." In this stack, the most common causes are:
+
+- container revision fails startup and ingress closes/reset connections
+- backend cannot reach PostgreSQL (bad host/firewall/SSL) and never becomes ready
+- intermittent control-plane/network errors during `az containerapp up`
+
+Useful checks:
+
+```powershell
+az containerapp revision list --name <backend-app> --resource-group <rg> -o table
+az containerapp logs show --name <backend-app> --resource-group <rg> --tail 200
+az containerapp show --name <backend-app> --resource-group <rg> --query properties.latestRevisionName -o tsv
+```
+
+If deployment intermittently fails with reset/transport errors, rerun deploy after a short delay. The workflow includes retry loops for `az containerapp up` to reduce these transient failures.

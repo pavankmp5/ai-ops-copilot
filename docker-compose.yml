@@ -1,9 +1,11 @@
 services:
   postgres:
     image: postgres:16-alpine
-    env_file:
-      - .env
     container_name: ai-ops-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aiops}
+      POSTGRES_USER: ${POSTGRES_USER:-aiops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiops_dev_password}
     ports:
       - "5432:5432"
     volumes:
@@ -29,6 +31,7 @@ services:
       ENVIRONMENT: development
       LOG_JSON: "true"
       STORAGE_PROVIDER: local
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aiops}:${POSTGRES_PASSWORD:-aiops_dev_password}@postgres:5432/${POSTGRES_DB:-aiops}
     volumes:
       - ./data:/app/data
       - ./vector_db:/app/vector_db
@@ -44,8 +47,8 @@ services:
     ports:
       - "8080:80"
     environment:
-      API_BASE_URL: http://backend:8000
-      DOCS_URL: http://backend:8000/docs
+      API_BASE_URL: http://localhost:8000
+      DOCS_URL: http://localhost:8000/docs
 
 volumes:
   postgres_data:

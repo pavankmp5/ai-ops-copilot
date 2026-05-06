@@ -1,7 +1,10 @@
 import logging
+import os
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from functools import lru_cache
+from pathlib import Path
+from urllib.parse import quote, urlparse, urlunparse
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
@@ -18,19 +21,53 @@ def _utc_now() -> str:
 
 def _normalized_database_url() -> str:
     settings = get_settings()
-    if settings.database_url.startswith("sqlite:///"):
-        return settings.database_url
-    if settings.database_url.startswith("postgres://"):
-        return settings.database_url.replace("postgres://", "postgresql+psycopg://", 1)
-    if settings.database_url.startswith("postgresql://"):
-        return settings.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
-    return settings.database_url
+    database_url = settings.database_url
+
+    if database_url.startswith("sqlite:///"):
+        return database_url
+
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
+    elif database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    return _resolve_local_postgres_service_host(database_url)
+
+
+def _is_container_runtime() -> bool:
+    running_in_docker = os.getenv("RUNNING_IN_DOCKER", "").strip().lower() in {"1", "true", "yes"}
+    return running_in_docker or Path("/.dockerenv").exists()
+
+
+def _resolve_local_postgres_service_host(database_url: str) -> str:
+    if not database_url.startswith("postgresql+psycopg://") or _is_container_runtime():
+        return database_url
+
+    parsed = urlparse(database_url)
+    if parsed.hostname != "postgres":
+        return database_url
+
+    # `postgres` resolves only on container networks. For host-run local backend, use localhost.
+    user = quote(parsed.username, safe="") if parsed.username else ""
+    password = quote(parsed.password, safe="") if parsed.password else ""
+    userinfo = user
+    if password:
+        userinfo = f"{userinfo}:{password}"
+    if userinfo:
+        userinfo = f"{userinfo}@"
+    port = parsed.port or 5432
+    replaced = parsed._replace(netloc=f"{userinfo}localhost:{port}")
+    logger.warning(
+        "DATABASE_URL host 'postgres' detected outside container runtime. "
+        "Using localhost for local development."
+    )
+    return urlunparse(replaced)
 
 
 @lru_cache
 def get_engine() -> Engine:
     database_url = _normalized_database_url()
-    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {"connect_timeout": 10}
     return create_engine(database_url, future=True, pool_pre_ping=True, connect_args=connect_args)
 
 
