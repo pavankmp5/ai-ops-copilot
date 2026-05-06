@@ -163,6 +163,8 @@ jobs:
             az containerapp update \
               --name "${{ secrets.AZURE_BACKEND_APP_NAME }}" \
               --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+              --min-replicas 1 \
+              --max-replicas 3 \
               --image "${{ steps.backend_image.outputs.image }}"
           else
             az containerapp create \
@@ -172,6 +174,8 @@ jobs:
               --image "${{ steps.backend_image.outputs.image }}" \
               --target-port 8000 \
               --ingress external \
+              --min-replicas 1 \
+              --max-replicas 3 \
               --registry-server "${{ steps.acr.outputs.acr_login_server }}" \
               --registry-username "${{ steps.acr.outputs.acr_username }}" \
               --registry-password "${{ steps.acr.outputs.acr_password }}"
@@ -243,6 +247,8 @@ jobs:
             az containerapp update \
               --name "${{ secrets.AZURE_FRONTEND_APP_NAME }}" \
               --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+              --min-replicas 1 \
+              --max-replicas 3 \
               --image "${{ steps.frontend_image.outputs.image }}"
           else
             az containerapp create \
@@ -252,6 +258,8 @@ jobs:
               --image "${{ steps.frontend_image.outputs.image }}" \
               --target-port 80 \
               --ingress external \
+              --min-replicas 1 \
+              --max-replicas 3 \
               --registry-server "${{ steps.acr.outputs.acr_login_server }}" \
               --registry-username "${{ steps.acr.outputs.acr_username }}" \
               --registry-password "${{ steps.acr.outputs.acr_password }}"
@@ -290,7 +298,7 @@ jobs:
       - name: Verify backend health
         run: |
           for i in {1..30}; do
-            if curl -fsS "https://${{ steps.backend_url.outputs.backend_fqdn }}/health" > /dev/null; then
+            if curl -fsS --connect-timeout 5 --max-time 15 "https://${{ steps.backend_url.outputs.backend_fqdn }}/health" > /dev/null; then
               echo "Backend /health is OK."
               break
             fi
@@ -300,7 +308,7 @@ jobs:
               exit 1
             fi
           done
-          curl -fsS "https://${{ steps.backend_url.outputs.backend_fqdn }}/readyz" > /dev/null
+          curl -fsS --connect-timeout 5 --max-time 15 "https://${{ steps.backend_url.outputs.backend_fqdn }}/readyz" > /dev/null
           echo "Backend /readyz is OK."
 
       - name: Capture backend revision diagnostics on failure
@@ -324,7 +332,7 @@ jobs:
       - name: Verify frontend health
         run: |
           for i in {1..30}; do
-            if curl -fsS "https://${{ steps.frontend_url.outputs.frontend_fqdn }}/" > /dev/null; then
+            if curl -fsS --connect-timeout 5 --max-time 15 "https://${{ steps.frontend_url.outputs.frontend_fqdn }}/" > /dev/null; then
               echo "Frontend is reachable."
               exit 0
             fi
