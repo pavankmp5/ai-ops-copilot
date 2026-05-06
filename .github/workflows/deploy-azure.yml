@@ -283,28 +283,44 @@ jobs:
 
       - name: Verify backend health
         run: |
-          echo "Verifying backend at https://${{ steps.backend_url.outputs.backend_fqdn }}/health"
+          BACKEND_URL="https://${{ steps.backend_url.outputs.backend_fqdn }}"
+          echo "Verifying backend health at ${BACKEND_URL}/health and ${BACKEND_URL}/readyz"
+
+          HEALTH_CHECK_PASSED=false
           for i in {1..30}; do
-            status_code=$(curl -L -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 15 "https://${{ steps.backend_url.outputs.backend_fqdn }}/health" || echo "curl_failed")
-            if [ "$status_code" = "200" ]; then
+            echo "Attempt $i/30: Checking ${BACKEND_URL}/health..."
+            # Execute curl, capture exit code, and store body for inspection if needed
+            HTTP_CODE=$(curl -L -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 15 "${BACKEND_URL}/health")
+            CURL_EXIT_CODE=$?
+
+            if [ "$CURL_EXIT_CODE" -eq 0 ] && [ "$HTTP_CODE" = "200" ]; then
               echo "Backend /health is OK (HTTP 200)."
+              HEALTH_CHECK_PASSED=true
               break
+            elif [ "$CURL_EXIT_CODE" -ne 0 ]; then
+              echo "Curl command failed for /health with exit code $CURL_EXIT_CODE."
+            else
+              echo "Backend /health returned HTTP status code: $HTTP_CODE."
             fi
-            echo "Attempt $i: Backend /health returned $status_code. Waiting 5s..."
             sleep 5
-            if [ "$i" -eq 30 ]; then
-              echo "Backend health check failed after 30 attempts."
-              # Try to get the body of the failure for diagnostics
-              curl -v "https://${{ steps.backend_url.outputs.backend_fqdn }}/health" || true
-              exit 1
-            fi
           done
-          
-          echo "Verifying backend readiness at https://${{ steps.backend_url.outputs.backend_fqdn }}/readyz"
-          readyz_status=$(curl -L -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 15 "https://${{ steps.backend_url.outputs.backend_fqdn }}/readyz" || echo "curl_failed")
-          if [ "$readyz_status" != "200" ]; then
-            echo "Backend /readyz failed with status $readyz_status"
-            curl -v "https://${{ steps.backend_url.outputs.backend_fqdn }}/readyz" || true
+
+          if [ "$HEALTH_CHECK_PASSED" = false ]; then
+            echo "Backend health check (/health) failed after 30 attempts."
+            echo "Attempting to get verbose curl output for /health for diagnostics:"
+            curl -v "${BACKEND_URL}/health" || true # Show verbose output, ignore errors from curl itself
+            exit 1
+          fi
+
+          # Now check /readyz
+          echo "Verifying backend readiness at ${BACKEND_URL}/readyz"
+          READYZ_HTTP_CODE=$(curl -L -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 15 "${BACKEND_URL}/readyz")
+          READYZ_CURL_EXIT_CODE=$?
+
+          if [ "$READYZ_CURL_EXIT_CODE" -ne 0 ] || [ "$READYZ_HTTP_CODE" != "200" ]; then
+            echo "Backend /readyz check failed. Curl exit code: $READYZ_CURL_EXIT_CODE, HTTP status: $READYZ_HTTP_CODE"
+            echo "Attempting to get verbose curl output for /readyz for diagnostics:"
+            curl -v "${BACKEND_URL}/readyz" || true
             exit 1
           fi
           echo "Backend /readyz is OK."
