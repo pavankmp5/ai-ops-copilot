@@ -48,10 +48,13 @@ def home():
 @app.on_event("startup")
 def startup_checks():
     if settings.storage_provider == "local":
+        print("Startup checks: Creating data directory")
         os.makedirs(settings.data_dir, exist_ok=True)
+    print("Startup checks: Creating vector_db directory")
     os.makedirs(settings.vector_db_dir, exist_ok=True)
+    print("Startup checks: Starting database initialization")
     init_db()
-    print("Startup checks complete")
+    print("Startup checks: Database initialization complete")
     logging.getLogger("app.startup").info(
         "Startup complete environment=%s storage_provider=%s vector_db_dir=%s database_url=%s",
         settings.environment,
