@@ -289,9 +289,11 @@ jobs:
           HEALTH_CHECK_PASSED=false
           for i in {1..30}; do
             echo "Attempt $i/30: Checking ${BACKEND_URL}/health..."
-            # Execute curl, capture exit code, and store body for inspection if needed
+            # Avoid bash -e exiting on transient curl failures; capture both exit and code.
+            set +e
             HTTP_CODE=$(curl -L -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 15 "${BACKEND_URL}/health")
             CURL_EXIT_CODE=$?
+            set -e
 
             if [ "$CURL_EXIT_CODE" -eq 0 ] && [ "$HTTP_CODE" = "200" ]; then
               echo "Backend /health is OK (HTTP 200)."
@@ -314,8 +316,10 @@ jobs:
 
           # Now check /readyz
           echo "Verifying backend readiness at ${BACKEND_URL}/readyz"
+          set +e
           READYZ_HTTP_CODE=$(curl -L -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 15 "${BACKEND_URL}/readyz")
           READYZ_CURL_EXIT_CODE=$?
+          set -e
 
           if [ "$READYZ_CURL_EXIT_CODE" -ne 0 ] || [ "$READYZ_HTTP_CODE" != "200" ]; then
             echo "Backend /readyz check failed. Curl exit code: $READYZ_CURL_EXIT_CODE, HTTP status: $READYZ_HTTP_CODE"
