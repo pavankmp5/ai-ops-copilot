@@ -44,6 +44,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Verify Azure Blob SDK import
+        run: python -c "from azure.storage.blob import BlobServiceClient; print('azure-storage-blob import OK')"
+
       - name: Run backend smoke test
         run: python scripts/smoke_test.py
 

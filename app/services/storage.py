@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from io import BytesIO
 
@@ -15,6 +16,7 @@ def _dataset_blob_name(dataset_id: str) -> str:
 
 
 _blob_container_client = None
+logger = logging.getLogger(__name__)
 
 
 def _get_blob_client():
@@ -89,6 +91,7 @@ def storage_health() -> dict:
             _get_blob_client().list_blobs(name_starts_with="datasets/", results_per_page=1)
             return {"provider": "azure_blob", "available": True}
         except Exception:
+            logger.exception("Azure Blob storage readiness probe failed.")
             return {"provider": "azure_blob", "available": False}
 
     # For local storage, validate that we can create and write in the target directory.
