@@ -16,7 +16,7 @@ Implementation blueprint:
 - Frontend: React + Vite
 - Database: SQLite for local/demo usage, PostgreSQL-ready for hosted scale
 - Auth: JWT access tokens + refresh tokens
-- RBAC: tenant-aware roles (current `admin` / `user`, expanding to `admin` / `analyst` / `viewer`)
+- RBAC: tenant-aware `admin` / `analyst` / `viewer` roles
 - AI: prompt-based analytics with optional RAG enrichment and resilient local fallback
 
 ## What It Does
@@ -223,6 +223,25 @@ The app now supports two question types:
 
 - dataset-grounded questions through `/ask`
 - general operational questions through `/chat`
+- persistent threaded conversations through `/chat/sessions/*`
+
+### Conversation APIs
+
+Conversation persistence is now available for both dataset and general chat flows.
+
+- `POST /chat/sessions`
+  - creates a new session
+- `GET /chat/sessions`
+  - lists current user sessions
+- `GET /chat/sessions/{session_id}`
+  - returns session messages and retrieval events
+- `POST /chat/sessions/{session_id}/messages`
+  - appends a message to an existing session
+  - body:
+    - `question` (required)
+    - `dataset_id` (optional, uses dataset-grounded mode when provided)
+
+Both `/ask` and `/chat` also accept optional `session_id`; if omitted, a new session is auto-created.
 
 This lets you demo both analytics and broader copilot behavior from the same frontend.
 
@@ -281,9 +300,43 @@ Built-in improvements:
 ## Seeded Users
 
 - `admin / admin123`
-- `alice / alice123`
-- `bob / bob123`
-- `charlie / charlie123`
+- `alice / alice123` (`analyst`)
+- `bob / bob123` (`viewer`)
+- `charlie / charlie123` (`analyst`)
+
+## Build Status
+
+Current implementation phase status:
+
+- Phase 1 complete: RBAC normalization, authorization helper, audit metadata fields, request ID propagation.
+- Phase 2 in progress: persistent chat sessions/messages/retrieval history implemented with session APIs.
+- Next target phase: async ingestion job pipeline with retries, status tracking, and operational visibility.
+
+## Next Chat Kickoff (Phase 3)
+
+Use this prompt in a new chat to continue implementation cleanly:
+
+```text
+Continue from current ai_ops_copilot repo state and implement Phase 3: async document ingestion pipeline.
+
+Goals:
+1) Add ingestion_jobs and ingestion_attempts persistence (sqlite + postgres compatible in app/core/db.py init/migration flow).
+2) Move/background-index flow behind explicit job lifecycle states: pending, running, succeeded, failed, retrying.
+3) Add retry policy with capped attempts and backoff metadata.
+4) Add APIs:
+   - POST /datasets/{id}/ingestion-jobs
+   - GET /ingestion-jobs/{job_id}
+   - GET /datasets/{id}/ingestion-jobs
+   - POST /ingestion-jobs/{job_id}/retry
+5) Emit audit events for job created/failed/retried/succeeded.
+6) Keep modular monolith boundaries and avoid adding new infrastructure.
+
+Requirements:
+- Keep tenant safety and RBAC enforcement.
+- Do not break existing /upload-csv, /ask, /chat flows.
+- Run compile validation and summarize changed files.
+- Provide a short follow-up checklist for Phase 4 admin metrics.
+```
 
 ## Troubleshooting
 
