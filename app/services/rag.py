@@ -46,6 +46,9 @@ def add_documents(texts, ids=None, metadatas=None):
     except RuntimeError:
         logger.info("Skipping document indexing because the optional RAG stack is unavailable.")
         return
+    except Exception:
+        logger.exception("Unexpected RAG backend error during document indexing bootstrap.")
+        return
 
     embeddings = model.encode(texts).tolist()
     resolved_ids = ids or [str(i) for i in range(len(texts))]
@@ -64,6 +67,9 @@ def remove_dataset_documents(dataset_id: str) -> None:
         collection = _get_collection()
     except RuntimeError:
         return
+    except Exception:
+        logger.exception("Unexpected RAG backend error while loading collection for dataset '%s'", dataset_id)
+        return
 
     try:
         collection.delete(where={"dataset_id": dataset_id})
@@ -77,9 +83,16 @@ def query_documents(query, dataset_id: str | None = None):
     except RuntimeError:
         logger.info("Returning empty RAG results because the optional RAG stack is unavailable.")
         return []
+    except Exception:
+        logger.exception("Unexpected RAG backend error while loading collection. Returning empty RAG results.")
+        return []
 
-    if collection.count() == 0:
-        logger.info("RAG collection is empty; skipping embedding lookup.")
+    try:
+        if collection.count() == 0:
+            logger.info("RAG collection is empty; skipping embedding lookup.")
+            return []
+    except Exception:
+        logger.exception("Failed to inspect RAG collection state. Returning empty RAG results.")
         return []
 
     try:
@@ -87,8 +100,15 @@ def query_documents(query, dataset_id: str | None = None):
     except RuntimeError:
         logger.info("Returning empty RAG results because the optional RAG stack is unavailable.")
         return []
+    except Exception:
+        logger.exception("Unexpected RAG model load failure. Returning empty RAG results.")
+        return []
 
-    query_embedding = model.encode([query]).tolist()
+    try:
+        query_embedding = model.encode([query]).tolist()
+    except Exception:
+        logger.exception("Failed to compute query embedding. Returning empty RAG results.")
+        return []
     settings = get_settings()
 
     query_kwargs = {
@@ -98,6 +118,10 @@ def query_documents(query, dataset_id: str | None = None):
     if dataset_id:
         query_kwargs["where"] = {"dataset_id": dataset_id}
 
-    results = collection.query(**query_kwargs)
+    try:
+        results = collection.query(**query_kwargs)
+    except Exception:
+        logger.exception("RAG query execution failed. Returning empty RAG results.")
+        return []
 
     return results["documents"]

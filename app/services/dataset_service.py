@@ -48,6 +48,33 @@ async def upload_dataset(file: UploadFile, current_user: User) -> dict:
                 "filename": file.filename,
                 "reused": True,
             }
+        # Recover from metadata-only datasets by recreating the missing backing file.
+        normalized_csv_bytes = dataframe.to_csv(index=False).encode("utf-8")
+        save_dataset_csv(existing_dataset_id, normalized_csv_bytes)
+        grant_dataset_access(current_user.username, existing_dataset_id, granted_by_username=current_user.username)
+        record_audit_event(
+            event_type="dataset.recovered",
+            actor_username=current_user.username,
+            tenant_id=current_user.tenant_id,
+            resource_type="dataset",
+            resource_id=existing_dataset_id,
+            detail=f"Recovered missing dataset file for '{file.filename}'.",
+        )
+        logger.warning(
+            "Recovered missing dataset file for dataset '%s' via upload by user '%s'",
+            existing_dataset_id,
+            current_user.username,
+        )
+        return {
+            "message": "Recovered dataset file from uploaded content.",
+            "dataset_id": existing_dataset_id,
+            "tenant_id": current_user.tenant_id,
+            "filename": file.filename,
+            "rows": len(dataframe),
+            "columns": list(dataframe.columns),
+            "reused": False,
+            "indexing": "pending",
+        }
 
     dataset_id = str(uuid.uuid4())
     normalized_csv_bytes = dataframe.to_csv(index=False).encode("utf-8")
