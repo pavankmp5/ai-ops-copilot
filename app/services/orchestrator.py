@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from app.core.auth import User
 from app.services.access import ensure_dataset_access
 from app.services.audit import record_audit_event
+from app.services.conversations import get_or_create_session, persist_chat_interaction
 from app.services.guardrails import validate_question
 from app.services.llm import ask_llm
 from app.services.rag import query_documents
@@ -127,7 +128,7 @@ def _build_general_fallback_answer(question: str) -> str:
     )
 
 
-def answer_question(question: str, dataset_id: str, current_user: User) -> dict:
+def answer_question(question: str, dataset_id: str, current_user: User, session_id: str | None = None) -> dict:
     overall_start = time.perf_counter()
     cleaned_question = validate_question(question)
     cleaned_dataset_id = dataset_id.strip()
@@ -206,6 +207,21 @@ def answer_question(question: str, dataset_id: str, current_user: User) -> dict:
         answer_source = "local_fallback"
     llm_duration_ms = round((time.perf_counter() - llm_start) * 1000, 2)
     total_duration_ms = round((time.perf_counter() - overall_start) * 1000, 2)
+    session = get_or_create_session(current_user, session_id, cleaned_question)
+    persisted = persist_chat_interaction(
+        current_user,
+        session_id=session["session_id"],
+        question=cleaned_question,
+        answer=answer,
+        mode=mode,
+        dataset_id=cleaned_dataset_id,
+        answer_source=answer_source,
+        rag_used=rag_context != "No relevant documents found.",
+        rag_context=rag_context,
+        latency_total_ms=total_duration_ms,
+        latency_rag_ms=rag_duration_ms,
+        latency_llm_ms=llm_duration_ms,
+    )
 
     print(
         f"Latency | total={total_duration_ms}ms rag={rag_duration_ms}ms llm={llm_duration_ms}ms"
@@ -227,6 +243,8 @@ def answer_question(question: str, dataset_id: str, current_user: User) -> dict:
         detail=f"Question executed in mode '{mode}' total_ms={total_duration_ms}.",
     )
     return {
+        "session_id": session["session_id"],
+        "message_id": persisted["message_id"],
         "question": cleaned_question,
         "dataset_id": cleaned_dataset_id,
         "tenant_id": current_user.tenant_id,
@@ -243,7 +261,7 @@ def answer_question(question: str, dataset_id: str, current_user: User) -> dict:
     }
 
 
-def answer_general_question(question: str, current_user: User) -> dict:
+def answer_general_question(question: str, current_user: User, session_id: str | None = None) -> dict:
     overall_start = time.perf_counter()
     cleaned_question = validate_question(question)
     mode = "general"
@@ -276,6 +294,21 @@ def answer_general_question(question: str, current_user: User) -> dict:
         answer_source = "local_fallback"
     llm_duration_ms = round((time.perf_counter() - llm_start) * 1000, 2)
     total_duration_ms = round((time.perf_counter() - overall_start) * 1000, 2)
+    session = get_or_create_session(current_user, session_id, cleaned_question)
+    persisted = persist_chat_interaction(
+        current_user,
+        session_id=session["session_id"],
+        question=cleaned_question,
+        answer=answer,
+        mode=mode,
+        dataset_id=None,
+        answer_source=answer_source,
+        rag_used=False,
+        rag_context="No relevant documents found.",
+        latency_total_ms=total_duration_ms,
+        latency_rag_ms=rag_duration_ms,
+        latency_llm_ms=llm_duration_ms,
+    )
 
     record_audit_event(
         event_type="query.general",
@@ -286,6 +319,8 @@ def answer_general_question(question: str, current_user: User) -> dict:
         detail=f"General question executed total_ms={total_duration_ms}.",
     )
     return {
+        "session_id": session["session_id"],
+        "message_id": persisted["message_id"],
         "question": cleaned_question,
         "dataset_id": None,
         "tenant_id": current_user.tenant_id,

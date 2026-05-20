@@ -2,13 +2,21 @@
 
 AI Ops Copilot is a full-stack demo application for secure dataset upload, role-based access control, auditability, and AI-assisted analysis.
 
+## Strategic Direction
+
+This project is being refined toward an **Enterprise AI Operations and Knowledge Copilot Platform**.
+
+Implementation blueprint:
+
+- [Enterprise Architecture Blueprint](docs/architecture/enterprise_blueprint.md)
+
 ## Stack
 
 - Backend: FastAPI
 - Frontend: React + Vite
 - Database: SQLite for local/demo usage, PostgreSQL-ready for hosted scale
 - Auth: JWT access tokens + refresh tokens
-- RBAC: tenant-aware `admin` / `user` roles
+- RBAC: tenant-aware roles (current `admin` / `user`, expanding to `admin` / `analyst` / `viewer`)
 - AI: prompt-based analytics with optional RAG enrichment and resilient local fallback
 
 ## What It Does

@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.db import init_db
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import setup_logging
+from app.core.request_context import set_request_id
 from app.core.settings import get_settings
 from app.routes import audit, auth, data, health, query
 from app.services.rate_limiter import enforce_rate_limit
@@ -70,9 +71,13 @@ async def log_requests(request: Request, call_next):
 
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
+    set_request_id(request_id)
     remaining, window_seconds = enforce_rate_limit(request)
     start_time = time.perf_counter()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    finally:
+        set_request_id(None)
     duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
     logging.getLogger("app.request").info(

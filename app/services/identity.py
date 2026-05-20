@@ -29,14 +29,14 @@ class RegistrationRequest(BaseModel):
     username: str
     password: str
     tenant_id: str | None = None
-    role: str = "user"
+    role: str = "viewer"
 
 
 class CreateUserRequest(BaseModel):
     username: str
     password: str
     tenant_id: str
-    role: str = "user"
+    role: str = "viewer"
 
 
 class AuthenticatedUser(BaseModel):
@@ -70,7 +70,7 @@ def get_authenticated_user(username: str) -> AuthenticatedUser | None:
         row = fetchone(
             connection,
             """
-            SELECT username, tenant_id, role
+            SELECT username, tenant_id, role, status
             FROM users
             WHERE username = :username
             """,
@@ -78,6 +78,10 @@ def get_authenticated_user(username: str) -> AuthenticatedUser | None:
         )
 
     if not row:
+        return None
+
+    if row["status"] != "active":
+        logger.warning("User '%s' is not active.", row["username"])
         return None
 
     allowed_dataset_ids = ["*"] if row["role"] == "admin" else _fetch_allowed_dataset_ids(row["username"])
@@ -144,6 +148,17 @@ def authenticate_user(username: str, password: str) -> tuple[AuthenticatedUser, 
     user = get_authenticated_user(cleaned_username)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
+
+    with get_db_connection() as connection:
+        execute(
+            connection,
+            """
+            UPDATE users
+            SET last_login_at = :last_login_at
+            WHERE username = :username
+            """,
+            {"last_login_at": _utc_now(), "username": user.username},
+        )
 
     record_audit_event(
         event_type="auth.login",
@@ -231,9 +246,12 @@ def register_user(request: RegistrationRequest) -> AuthenticatedUser:
     password = request.password.strip()
     tenant_id = (request.tenant_id or "tenant_default").strip()
     role = request.role.strip()
+    allowed_roles = {"admin", "analyst", "viewer"}
 
     if len(username) < 3 or len(password) < 6:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username/password too short.")
+    if role not in allowed_roles:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role.")
 
     password_hash, password_salt = hash_password(password)
     with get_db_connection() as connection:

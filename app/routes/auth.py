@@ -49,7 +49,14 @@ def logout(request: LogoutRequest, current_user: User = Depends(get_current_user
 
 @router.post("/register", response_model=User)
 def register(request: RegistrationRequest):
-    return register_user(request)
+    return register_user(
+        RegistrationRequest(
+            username=request.username,
+            password=request.password,
+            tenant_id=request.tenant_id,
+            role="viewer",
+        )
+    )
 
 
 @router.post("/users", response_model=User)

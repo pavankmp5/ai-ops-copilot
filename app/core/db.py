@@ -132,8 +132,10 @@ def init_db() -> None:
                     username TEXT PRIMARY KEY,
                     tenant_id TEXT NOT NULL DEFAULT 'tenant_default',
                     role TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
                     password_hash TEXT NOT NULL,
                     password_salt TEXT NOT NULL,
+                    last_login_at TEXT,
                     created_at TEXT NOT NULL
                 )
                 """
@@ -171,6 +173,10 @@ def init_db() -> None:
                     resource_type TEXT,
                     resource_id TEXT,
                     detail TEXT,
+                    request_id TEXT,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    metadata_json TEXT,
                     created_at TEXT NOT NULL
                 )
                 """
@@ -183,6 +189,54 @@ def init_db() -> None:
                     tenant_id TEXT NOT NULL,
                     expires_at TEXT NOT NULL,
                     revoked_at TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    archived_at TEXT
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    message_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    dataset_id TEXT,
+                    mode TEXT NOT NULL,
+                    question TEXT NOT NULL,
+                    answer TEXT NOT NULL,
+                    answer_source TEXT NOT NULL,
+                    rag_used INTEGER NOT NULL DEFAULT 0,
+                    llm_model TEXT,
+                    latency_total_ms REAL,
+                    latency_rag_ms REAL,
+                    latency_llm_ms REAL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS retrieval_events (
+                    event_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL,
+                    dataset_id TEXT,
+                    rag_used INTEGER NOT NULL DEFAULT 0,
+                    context_excerpt TEXT,
                     created_at TEXT NOT NULL
                 )
                 """
@@ -203,8 +257,10 @@ def init_db() -> None:
                     username TEXT PRIMARY KEY,
                     tenant_id TEXT NOT NULL DEFAULT 'tenant_default',
                     role TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
                     password_hash TEXT NOT NULL,
                     password_salt TEXT NOT NULL,
+                    last_login_at TEXT,
                     created_at TEXT NOT NULL
                 )
                 """
@@ -242,6 +298,10 @@ def init_db() -> None:
                     resource_type TEXT,
                     resource_id TEXT,
                     detail TEXT,
+                    request_id TEXT,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    metadata_json TEXT,
                     created_at TEXT NOT NULL
                 )
                 """
@@ -254,6 +314,54 @@ def init_db() -> None:
                     tenant_id TEXT NOT NULL,
                     expires_at TEXT NOT NULL,
                     revoked_at TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    archived_at TEXT
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    message_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    dataset_id TEXT,
+                    mode TEXT NOT NULL,
+                    question TEXT NOT NULL,
+                    answer TEXT NOT NULL,
+                    answer_source TEXT NOT NULL,
+                    rag_used INTEGER NOT NULL DEFAULT 0,
+                    llm_model TEXT,
+                    latency_total_ms DOUBLE PRECISION,
+                    latency_rag_ms DOUBLE PRECISION,
+                    latency_llm_ms DOUBLE PRECISION,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS retrieval_events (
+                    event_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL,
+                    dataset_id TEXT,
+                    rag_used INTEGER NOT NULL DEFAULT 0,
+                    context_excerpt TEXT,
                     created_at TEXT NOT NULL
                 )
                 """
@@ -277,6 +385,27 @@ def _migrate_schema(connection: Connection) -> None:
     if not _column_exists(connection, "dataset_access", "shared_by_username"):
         connection.exec_driver_sql("ALTER TABLE dataset_access ADD COLUMN shared_by_username TEXT")
 
+    if not _column_exists(connection, "users", "status"):
+        connection.exec_driver_sql("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+
+    if not _column_exists(connection, "users", "last_login_at"):
+        connection.exec_driver_sql("ALTER TABLE users ADD COLUMN last_login_at TEXT")
+
+    if not _column_exists(connection, "audit_logs", "request_id"):
+        connection.exec_driver_sql("ALTER TABLE audit_logs ADD COLUMN request_id TEXT")
+
+    if not _column_exists(connection, "audit_logs", "ip_address"):
+        connection.exec_driver_sql("ALTER TABLE audit_logs ADD COLUMN ip_address TEXT")
+
+    if not _column_exists(connection, "audit_logs", "user_agent"):
+        connection.exec_driver_sql("ALTER TABLE audit_logs ADD COLUMN user_agent TEXT")
+
+    if not _column_exists(connection, "audit_logs", "metadata_json"):
+        connection.exec_driver_sql("ALTER TABLE audit_logs ADD COLUMN metadata_json TEXT")
+
+    # Role normalization for phase-1 RBAC migration.
+    execute(connection, "UPDATE users SET role = 'analyst' WHERE role = 'user'")
+
 
 def _create_indexes(connection: Connection) -> None:
     index_statements = [
@@ -286,6 +415,11 @@ def _create_indexes(connection: Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_dataset_access_username ON dataset_access(username)",
         "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_username ON refresh_tokens(username)",
         "CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_created ON audit_logs(tenant_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_logs_request_id ON audit_logs(request_id)",
+        "CREATE INDEX IF NOT EXISTS idx_users_role_status ON users(role, status)",
+        "CREATE INDEX IF NOT EXISTS idx_chat_sessions_tenant_user_created ON chat_sessions(tenant_id, username, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created ON chat_messages(session_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_retrieval_events_session_created ON retrieval_events(session_id, created_at)",
     ]
     for statement in index_statements:
         connection.exec_driver_sql(statement)
@@ -319,9 +453,10 @@ def _seed_default_tenants(connection: Connection) -> None:
 def _seed_default_users(connection: Connection) -> None:
     default_users = [
         ("admin", "admin123", "admin", "tenant_default"),
-        ("alice", "alice123", "user", "tenant_default"),
-        ("bob", "bob123", "user", "tenant_default"),
-        ("charlie", "charlie123", "user", "tenant_external"),
+        ("alice", "alice123", "analyst", "tenant_default"),
+        ("bob", "bob123", "viewer", "tenant_default"),
+        ("charlie", "charlie123", "analyst", "tenant_external"),
+        ("nitin", "nitin123", "admin", "tenant_default")
     ]
 
     for username, password, role, tenant_id in default_users:

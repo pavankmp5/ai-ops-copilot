@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile
 from pydantic import BaseModel
 
-from app.core.auth import User, get_current_user, require_roles
+from app.core.auth import User, authorize, get_current_user
 from app.services.dataset_service import list_visible_datasets, upload_dataset
 from app.services.indexing import index_dataset_file
 from app.services.access import share_dataset
@@ -41,8 +41,9 @@ class DatasetListResponse(BaseModel):
 async def upload_csv(
     file: UploadFile,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(require_roles("admin", "user")),
+    current_user: User = Depends(get_current_user),
 ):
+    authorize("datasets.upload", current_user)
     result = await upload_dataset(file, current_user)
     if not result.get("reused"):
         background_tasks.add_task(
@@ -65,6 +66,7 @@ def list_datasets(current_user: User = Depends(get_current_user)):
 def share_dataset_route(
     dataset_id: str,
     request: ShareDatasetRequest,
-    current_user: User = Depends(require_roles("admin", "user")),
+    current_user: User = Depends(get_current_user),
 ):
+    authorize("datasets.share", current_user)
     return share_dataset(dataset_id, request.target_username.strip(), current_user)

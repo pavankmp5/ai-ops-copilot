@@ -8,9 +8,37 @@ from app.services.identity import AuthenticatedUser, resolve_user_from_access_to
 
 logger = logging.getLogger(__name__)
 
-Role = Literal["admin", "user"]
+Role = Literal["admin", "analyst", "viewer"]
 User = AuthenticatedUser
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+
+Permission = Literal[
+    "users.manage",
+    "datasets.upload",
+    "datasets.share",
+    "datasets.query",
+    "audit.read",
+    "admin.metrics.read",
+]
+
+ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
+    "admin": {
+        "users.manage",
+        "datasets.upload",
+        "datasets.share",
+        "datasets.query",
+        "audit.read",
+        "admin.metrics.read",
+    },
+    "analyst": {
+        "datasets.upload",
+        "datasets.share",
+        "datasets.query",
+    },
+    "viewer": {
+        "datasets.query",
+    },
+}
 
 
 def get_user_by_username(username: str) -> User | None:
@@ -47,3 +75,18 @@ def require_roles(*roles: Role) -> Callable[[User], User]:
         return current_user
 
     return dependency
+
+
+def authorize(action: Permission, current_user: User) -> None:
+    allowed_actions = ROLE_PERMISSIONS.get(current_user.role, set())
+    if action not in allowed_actions:
+        logger.warning(
+            "User '%s' with role '%s' lacks permission '%s'",
+            current_user.username,
+            current_user.role,
+            action,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to perform this action.",
+        )
