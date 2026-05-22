@@ -1,63 +1,40 @@
 import logging
-from io import BytesIO
 
-import pandas as pd
-
+from app.services.ingestion.chunking import build_chunks
+from app.services.ingestion.pipeline import parse_stored_document
 from app.services.rag import add_documents, remove_dataset_documents
-from app.services.storage import read_dataset_bytes
+from app.services.storage import read_dataset_bytes, read_dataset_file_bytes
 
 logger = logging.getLogger(__name__)
 
 
-def _build_dataset_documents(dataset_id: str, file_name: str, dataframe: pd.DataFrame) -> list[dict]:
-    preview_rows = dataframe.head(10).to_csv(index=False)
-    columns = ", ".join(str(column) for column in dataframe.columns)
-    numeric_columns = list(dataframe.select_dtypes(include="number").columns)
-
-    overview = "\n".join(
-        [
-            f"Dataset ID: {dataset_id}",
-            f"Filename: {file_name}",
-            f"Rows: {len(dataframe)}",
-            f"Columns: {columns or 'No columns'}",
-        ]
-    )
-
-    numeric_summary = "No numeric summary available."
-    if numeric_columns:
-        numeric_summary = dataframe[numeric_columns[:8]].describe().round(2).to_string()
-
-    documents = [
-        {
-            "id": f"{dataset_id}:overview",
-            "text": overview,
-            "metadata": {"dataset_id": dataset_id, "file_name": file_name, "section": "overview"},
-        },
-        {
-            "id": f"{dataset_id}:summary",
-            "text": f"Numeric summary for dataset {file_name}\n{numeric_summary}",
-            "metadata": {"dataset_id": dataset_id, "file_name": file_name, "section": "summary"},
-        },
-        {
-            "id": f"{dataset_id}:preview",
-            "text": f"Preview rows for dataset {file_name}\n{preview_rows}",
-            "metadata": {"dataset_id": dataset_id, "file_name": file_name, "section": "preview"},
-        },
-    ]
-
-    return documents
-
-
 def index_dataset_file(dataset_id: str, file_name: str) -> None:
     try:
-        dataframe = pd.read_csv(BytesIO(read_dataset_bytes(dataset_id)))
-        documents = _build_dataset_documents(dataset_id, file_name, dataframe)
+        try:
+            raw_bytes = read_dataset_file_bytes(dataset_id, file_name)
+        except Exception:
+            raw_bytes = read_dataset_bytes(dataset_id)
+
+        document = parse_stored_document(filename=file_name, content=raw_bytes)
+        chunks = build_chunks(document)
+        if not chunks:
+            logger.warning("No indexable chunks were produced for dataset '%s' file '%s'", dataset_id, file_name)
+            return
+
         remove_dataset_documents(dataset_id)
         add_documents(
-            texts=[document["text"] for document in documents],
-            ids=[document["id"] for document in documents],
-            metadatas=[document["metadata"] for document in documents],
+            texts=[chunk.text for chunk in chunks],
+            ids=[f"{dataset_id}:{chunk.chunk_id}" for chunk in chunks],
+            metadatas=[
+                {
+                    "dataset_id": dataset_id,
+                    "file_name": file_name,
+                    "chunk_index": chunk.chunk_index,
+                    **chunk.metadata,
+                }
+                for chunk in chunks
+            ],
         )
-        logger.info("Indexed dataset '%s' for RAG with %s documents", dataset_id, len(documents))
+        logger.info("Indexed dataset '%s' for RAG with %s chunks", dataset_id, len(chunks))
     except Exception:
         logger.exception("Dataset indexing failed for dataset '%s'", dataset_id)

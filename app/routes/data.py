@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile
 from pydantic import BaseModel
 
 from app.core.auth import User, authorize, get_current_user
-from app.services.dataset_service import list_visible_datasets, upload_dataset
+from app.services.dataset_service import list_visible_datasets, upload_dataset, upload_document
 from app.services.indexing import index_dataset_file
 from app.services.access import share_dataset
 
@@ -50,6 +50,26 @@ async def upload_csv(
             index_dataset_file,
             result["dataset_id"],
             result.get("filename") or f"{result['dataset_id']}.csv",
+        )
+        result["indexing"] = "queued"
+    else:
+        result["indexing"] = "existing"
+    return result
+
+
+@router.post("/upload-document", response_model=UploadDatasetResponse)
+async def upload_document_route(
+    file: UploadFile,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+):
+    authorize("datasets.upload", current_user)
+    result = await upload_document(file, current_user)
+    if not result.get("reused"):
+        background_tasks.add_task(
+            index_dataset_file,
+            result["dataset_id"],
+            result.get("filename") or f"{result['dataset_id']}.txt",
         )
         result["indexing"] = "queued"
     else:

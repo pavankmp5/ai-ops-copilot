@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from io import BytesIO
 
@@ -6,7 +7,7 @@ import pandas as pd
 from fastapi import HTTPException, status
 
 from app.core.auth import User
-from app.services.access import ensure_dataset_access
+from app.services.access import ensure_dataset_access, get_dataset_metadata
 from app.services.audit import record_audit_event
 from app.services.conversations import get_or_create_session, persist_chat_interaction
 from app.services.guardrails import validate_question
@@ -133,19 +134,32 @@ def answer_question(question: str, dataset_id: str, current_user: User, session_
     cleaned_question = validate_question(question)
     cleaned_dataset_id = dataset_id.strip()
     ensure_dataset_access(cleaned_dataset_id, current_user)
+    dataset_metadata = get_dataset_metadata(cleaned_dataset_id)
+    if not dataset_metadata:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Dataset not found", "dataset_id": cleaned_dataset_id},
+        )
+    dataset_file_name = dataset_metadata.get("file_name") or f"{cleaned_dataset_id}.csv"
+    dataset_extension = os.path.splitext(dataset_file_name.lower())[1]
 
-    if not dataset_exists(cleaned_dataset_id):
+    if not dataset_exists(cleaned_dataset_id, dataset_file_name):
         logger.warning("Dataset '%s' not found for user '%s'", cleaned_dataset_id, current_user.username)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": "Dataset not found", "dataset_id": cleaned_dataset_id},
         )
 
-    dataframe = pd.read_csv(BytesIO(read_dataset_bytes(cleaned_dataset_id)))
-    mode = _detect_mode(cleaned_question)
-    dataset_snapshot = _build_dataset_snapshot(dataframe)
-    trend_info = _build_trend_info(dataframe)
-    anomaly_info = _build_anomaly_info(dataframe)
+    mode = _detect_mode(cleaned_question) if dataset_extension == ".csv" else "knowledge"
+    dataframe = None
+    dataset_snapshot = "Structured dataset snapshot unavailable for non-CSV source."
+    trend_info = "Trend detection is only available for CSV datasets."
+    anomaly_info = "Anomaly detection is only available for CSV datasets."
+    if dataset_extension == ".csv":
+        dataframe = pd.read_csv(BytesIO(read_dataset_bytes(cleaned_dataset_id)))
+        dataset_snapshot = _build_dataset_snapshot(dataframe)
+        trend_info = _build_trend_info(dataframe)
+        anomaly_info = _build_anomaly_info(dataframe)
 
     rag_start = time.perf_counter()
     rag_results = query_documents(cleaned_question, dataset_id=cleaned_dataset_id)
@@ -159,6 +173,7 @@ def answer_question(question: str, dataset_id: str, current_user: User, session_
     You are a business analyst for an AI Ops Copilot.
 
     MODE: {mode}
+    FILE TYPE: {dataset_extension or "unknown"}
 
     DATA SNAPSHOT:
     {dataset_snapshot}
@@ -199,7 +214,7 @@ def answer_question(question: str, dataset_id: str, current_user: User, session_
         answer = _build_local_fallback_answer(
             cleaned_question,
             mode,
-            dataframe,
+            dataframe if dataframe is not None else pd.DataFrame({"note": ["Non-CSV dataset fallback mode"]}),
             trend_info,
             anomaly_info,
             rag_context,

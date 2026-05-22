@@ -49,6 +49,86 @@ docker compose logs --tail 100 backend frontend
 docker compose down
 ```
 
+## 2.1) Azure Run + URLs
+
+### Deploy backend to Azure Container Apps (from repo root)
+```powershell
+az login
+az extension add --name containerapp --upgrade
+
+$RG="aiops-prod-rg"
+$ENV="aiops-container-env"
+$BACKEND="aiops-backend"
+
+cd f:\Python_learning\ai_ops_copilot
+
+az containerapp up `
+  --name $BACKEND `
+  --resource-group $RG `
+  --environment $ENV `
+  --source . `
+  --ingress external `
+  --target-port 8000
+```
+
+### Deploy frontend to Azure Container Apps (from `frontend/`)
+```powershell
+$FRONTEND="aiops-frontend"
+
+cd f:\Python_learning\ai_ops_copilot\frontend
+
+az containerapp up `
+  --name $FRONTEND `
+  --resource-group $RG `
+  --environment $ENV `
+  --source . `
+  --ingress external `
+  --target-port 80
+```
+
+### Get Azure URLs and wire frontend/backend
+```powershell
+$BACKEND_FQDN = az containerapp show `
+  --name $BACKEND `
+  --resource-group $RG `
+  --query properties.configuration.ingress.fqdn -o tsv
+
+$FRONTEND_FQDN = az containerapp show `
+  --name $FRONTEND `
+  --resource-group $RG `
+  --query properties.configuration.ingress.fqdn -o tsv
+
+az containerapp update `
+  --name $FRONTEND `
+  --resource-group $RG `
+  --set-env-vars `
+    API_BASE_URL=https://$BACKEND_FQDN `
+    DOCS_URL=https://$BACKEND_FQDN/docs
+
+az containerapp update `
+  --name $BACKEND `
+  --resource-group $RG `
+  --set-env-vars `
+    CORS_ALLOWED_ORIGINS=https://$FRONTEND_FQDN
+```
+
+### Azure URLs (current deployment)
+- Frontend (Azure): `https://ai-ops-frontend.ambitiouswater-d47ebdb6.centralindia.azurecontainerapps.io`
+- Backend API (Azure): `https://ai-ops-backend.ambitiouswater-d47ebdb6.centralindia.azurecontainerapps.io`
+- Backend Docs (Azure): `https://ai-ops-backend.ambitiouswater-d47ebdb6.centralindia.azurecontainerapps.io/docs`
+- Backend Health (Azure): `https://ai-ops-backend.ambitiouswater-d47ebdb6.centralindia.azurecontainerapps.io/health`
+
+### Azure demo checklist (one screen)
+1. Open frontend URL and verify login page loads.
+2. Verify backend health URL returns `{"status":"ok",...}`.
+3. Login with demo user (`admin/admin123` if seeded in that environment).
+4. Upload one small CSV and confirm dataset appears in list.
+5. Run one general question and one dataset question.
+6. Confirm response metadata is visible: `answer_source`, `rag_used`, `latency_ms`.
+7. Open backend docs URL and show `/health`, `/readyz`, `/system/status`.
+8. If question flow fails, capture backend logs immediately:
+   `az containerapp logs show --name ai-ops-backend --resource-group ai_co_pilot --tail 200`
+
 ## 3) High-Level Architecture (HLD)
 
 ```text

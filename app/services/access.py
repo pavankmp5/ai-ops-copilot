@@ -123,6 +123,20 @@ def get_dataset_owner(dataset_id: str) -> str | None:
     return row["owner_username"] if row else None
 
 
+def get_dataset_metadata(dataset_id: str) -> dict | None:
+    with get_db_connection() as connection:
+        row = fetchone(
+            connection,
+            """
+            SELECT dataset_id, tenant_id, owner_username, file_name, created_at
+            FROM datasets
+            WHERE dataset_id = :dataset_id
+            """,
+            {"dataset_id": dataset_id},
+        )
+    return dict(row) if row else None
+
+
 def get_dataset_id_by_hash(file_hash: str, tenant_id: str) -> str | None:
     with get_db_connection() as connection:
         row = fetchone(
