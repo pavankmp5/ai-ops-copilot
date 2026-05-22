@@ -249,13 +249,18 @@ This lets you demo both analytics and broader copilot behavior from the same fro
 
 Current RAG behavior:
 
-1. A CSV upload is stored and registered in the backend.
-2. A background task prepares dataset overview, summary, and preview text.
-3. If RAG dependencies are available, these documents are indexed into Chroma for that dataset.
-4. On `/ask`, retrieval is filtered to the selected dataset.
-5. Retrieved context is added to the prompt only when available.
+1. **Multi-format Ingestion**: Supports `.csv`, `.pdf`, `.docx`, `.txt`, and `.md` files.
+2. **Parser Architecture**:
+   - `detector.py`: Identifies file type and MIME type.
+   - `registry.py`: Resolves the appropriate parser for the file extension.
+   - `parsers/`: Modular parsers for each format (e.g., `CsvParser`, `PdfParser`, `DocxParser`).
+3. **Pipeline**:
+   - Files are parsed into a `NormalizedDocument` with sections and metadata.
+   - Background task chunks the normalized document using `chunking.py`.
+   - Chunks are indexed into Chroma for retrieval-augmented generation.
+4. **Scoping**: Retrieval is filtered to the selected dataset, ensuring scoped and relevant context.
 
-This keeps retrieval scoped and demo-friendly instead of searching across unrelated datasets.
+This architecture keeps retrieval modular and supports expanding to new formats easily.
 
 ### Answer Source
 
