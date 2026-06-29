@@ -58,7 +58,6 @@ async def upload_dataset(file: UploadFile, current_user: User) -> dict:
                 resource_id=existing_dataset_id,
                 detail=f"Reused duplicate upload '{file.filename}'.",
             )
-            print("Dataset upload deduplicated and reused")
             logger.info(
                 "User '%s' reused dataset '%s' for file '%s'",
                 current_user.username,
@@ -111,7 +110,6 @@ async def upload_dataset(file: UploadFile, current_user: User) -> dict:
     grant_dataset_access(current_user.username, dataset_id, granted_by_username=current_user.username)
     register_dataset_hash(dataset_id, file_hash)
 
-    print("Dataset stored successfully")
     logger.info(
         "User '%s' uploaded dataset '%s' from file '%s'",
         current_user.username,

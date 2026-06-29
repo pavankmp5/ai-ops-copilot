@@ -168,7 +168,6 @@ def authenticate_user(username: str, password: str) -> tuple[AuthenticatedUser, 
         resource_id=user.username,
         detail="User authenticated successfully.",
     )
-    print(f"JWT issued for user: {user.username}")
     logger.info("Authenticated user '%s' with role '%s'", user.username, user.role)
     return user, _build_token_bundle(user)
 

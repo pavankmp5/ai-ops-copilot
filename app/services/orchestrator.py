@@ -197,7 +197,6 @@ def answer_question(question: str, dataset_id: str, current_user: User, session_
     - Use context only when it is relevant to the question.
     """
 
-    print(f"Orchestrator running in mode: {mode}")
     logger.info(
         "User '%s' asked question against dataset '%s' in mode '%s'",
         current_user.username,
@@ -238,9 +237,6 @@ def answer_question(question: str, dataset_id: str, current_user: User, session_
         latency_llm_ms=llm_duration_ms,
     )
 
-    print(
-        f"Latency | total={total_duration_ms}ms rag={rag_duration_ms}ms llm={llm_duration_ms}ms"
-    )
     logger.info(
         "Latency measured dataset='%s' total_ms=%s rag_ms=%s llm_ms=%s",
         cleaned_dataset_id,

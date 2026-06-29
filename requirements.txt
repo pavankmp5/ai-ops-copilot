@@ -4,11 +4,7 @@ pydantic>=2.0
 python-multipart
 sqlalchemy
 psycopg[binary]
-faiss-cpu
 openai
-tiktoken
-python-dotenv
-requests
 pydantic-settings
 pandas
 azure-storage-blob

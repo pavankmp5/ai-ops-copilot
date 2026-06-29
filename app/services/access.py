@@ -105,7 +105,6 @@ def assign_dataset_owner(dataset_id: str, username: str, tenant_id: str, file_ha
         resource_id=dataset_id,
         detail=f"Dataset '{file_name}' created.",
     )
-    print(f"Assigned dataset owner: {username}")
     logger.info("Assigned dataset '%s' to owner '%s' tenant='%s'", dataset_id, username, tenant_id)
 
 
@@ -152,7 +151,6 @@ def get_dataset_id_by_hash(file_hash: str, tenant_id: str) -> str | None:
 
 
 def register_dataset_hash(dataset_id: str, file_hash: str) -> None:
-    print(f"Dataset hash registered for: {dataset_id}")
     logger.info("Dataset '%s' hash registration confirmed hash='%s'", dataset_id, file_hash[:12])
 
 
@@ -241,7 +239,6 @@ def share_dataset(dataset_id: str, target_username: str, current_user: User) -> 
         resource_id=dataset_id,
         detail=f"Shared with user '{target_username}'.",
     )
-    print(f"Dataset shared with user: {target_username}")
     return {
         "message": "Dataset shared successfully.",
         "dataset_id": dataset_id,

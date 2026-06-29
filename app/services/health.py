@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 def get_health_status() -> dict:
     settings = get_settings()
-    print("Health check executed")
     return {
         "status": "ok",
         "service": settings.app_name,
@@ -99,7 +98,6 @@ def get_system_status() -> dict:
             "rag_dependencies_available": bool(find_spec("chromadb")) and bool(find_spec("sentence_transformers")),
         },
         "storage": {
-            "database_url": settings.database_url,
             "provider": storage_state["provider"],
             "vector_db_dir": settings.vector_db_dir,
             "dataset_count": dataset_count,

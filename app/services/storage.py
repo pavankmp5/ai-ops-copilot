@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-from io import BytesIO
 
 from app.core.settings import get_settings
 
@@ -136,12 +135,6 @@ def read_dataset_file_bytes(dataset_id: str, file_name: str) -> bytes:
 
     with open(dataset_file_path(dataset_id, file_name), "rb") as file_handle:
         return file_handle.read()
-
-
-def dataset_readable_stream(dataset_id: str) -> BytesIO:
-    return BytesIO(read_dataset_bytes(dataset_id))
-
-
 def storage_health() -> dict:
     settings = get_settings()
     if settings.storage_provider == "azure_blob":

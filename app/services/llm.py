@@ -17,7 +17,6 @@ client = OpenAI(
 
 
 def ask_llm(prompt: str):
-    print("LLM CALLED")
     if not settings.openrouter_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

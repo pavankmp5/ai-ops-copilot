@@ -30,7 +30,6 @@ def _get_model():
         logger.warning("sentence-transformers is not installed; embeddings are unavailable.")
         raise RuntimeError("sentence-transformers is not installed.") from exc
 
-    print("Loading embedding model for RAG")
     logger.info("Loading sentence transformer model")
     try:
         return SentenceTransformer("all-MiniLM-L6-v2", local_files_only=True)

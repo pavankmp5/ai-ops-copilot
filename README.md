@@ -32,21 +32,47 @@ The system is designed to degrade gracefully:
 ## Architecture
 
 ```text
-React frontend
+React frontend (Vite SPA)
     |
+    |  JWT + REST
     v
-FastAPI backend
+FastAPI backend (modular monolith)
     |- Auth + RBAC
     |- Dataset upload + access control
     |- Audit logging
     |- Query orchestration
+    |- Conversation persistence
     |- Optional RAG retrieval
     |- LLM call with fallback
     |
-    +--> SQLite
-    +--> data/ CSV files
+    +--> SQLite / PostgreSQL
+    +--> data/ local dataset files
     +--> vector_db/ Chroma data
 ```
+
+## Future-State Architecture
+
+The current architecture is intentionally simple. The practical production path keeps the same modular-monolith backend shape while hardening the surrounding services.
+
+```text
+React SPA
+   |
+   |  HTTPS + JWT / refresh flow
+   v
+FastAPI API
+   |- Auth / RBAC / tenant isolation
+   |- Dataset APIs
+   |- Query + chat orchestration
+   |- Audit + runtime metrics
+   |- Ingestion jobs
+   |
+   +--> PostgreSQL for users, datasets, sessions, audit
+   +--> Object storage for uploaded files
+   +--> Shared vector store for RAG context
+   +--> External LLM provider with fallback path
+```
+
+This keeps the codebase maintainable while leaving room for scale without rewriting the application around a new framework.
 
 ## Project Layout
 
@@ -108,6 +134,55 @@ npm install
 npm run dev
 ```
 
+## Manual Run + Test
+
+### Run backend locally
+
+```powershell
+$env:DATABASE_URL = 'sqlite:///ai_ops_copilot_local.db'
+$env:ENVIRONMENT = 'development'
+$env:STORAGE_PROVIDER = 'local'
+$env:RAG_ENABLED = 'false'
+$env:JWT_SECRET_KEY = 'local-dev-secret'
+.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+### Run frontend locally
+
+```powershell
+$env:Path = 'C:\Program Files\nodejs;' + $env:Path
+cd frontend
+npm install
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+### Manual verification commands
+
+Open a second terminal and verify the backend:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/readyz
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/auth/token `
+  -ContentType 'application/x-www-form-urlencoded' `
+  -Body 'username=admin&password=admin123'
+```
+
+Then open the frontend:
+
+```text
+http://127.0.0.1:5173
+```
+
+Recommended manual path:
+
+1. Sign in as `admin / admin123`
+2. Confirm datasets load
+3. Upload a CSV
+4. Ask one dataset question
+5. Ask one general question
+6. Confirm `answer_source`, `rag_used`, and `latency_ms`
+
 ### Smoke Test
 
 ```powershell
@@ -162,7 +237,7 @@ Deployment guidance lives in [deploy/azure/README.md](deploy/azure/README.md).
 
 GitHub Actions workflows are configured in `.github/workflows`:
 
-- `ci.yml`
+- `ci-backend.yml`
 - runs on pull requests and pushes to `main`/`master`
 - validates backend smoke test, frontend build, Docker image build, and container runtime health checks
 
@@ -309,40 +384,6 @@ Built-in improvements:
 - `bob / bob123` (`viewer`)
 - `charlie / charlie123` (`analyst`)
 
-## Build Status
-
-Current implementation phase status:
-
-- Phase 1 complete: RBAC normalization, authorization helper, audit metadata fields, request ID propagation.
-- Phase 2 in progress: persistent chat sessions/messages/retrieval history implemented with session APIs.
-- Next target phase: async ingestion job pipeline with retries, status tracking, and operational visibility.
-
-## Next Chat Kickoff (Phase 3)
-
-Use this prompt in a new chat to continue implementation cleanly:
-
-```text
-Continue from current ai_ops_copilot repo state and implement Phase 3: async document ingestion pipeline.
-
-Goals:
-1) Add ingestion_jobs and ingestion_attempts persistence (sqlite + postgres compatible in app/core/db.py init/migration flow).
-2) Move/background-index flow behind explicit job lifecycle states: pending, running, succeeded, failed, retrying.
-3) Add retry policy with capped attempts and backoff metadata.
-4) Add APIs:
-   - POST /datasets/{id}/ingestion-jobs
-   - GET /ingestion-jobs/{job_id}
-   - GET /datasets/{id}/ingestion-jobs
-   - POST /ingestion-jobs/{job_id}/retry
-5) Emit audit events for job created/failed/retried/succeeded.
-6) Keep modular monolith boundaries and avoid adding new infrastructure.
-
-Requirements:
-- Keep tenant safety and RBAC enforcement.
-- Do not break existing /upload-csv, /ask, /chat flows.
-- Run compile validation and summarize changed files.
-- Provide a short follow-up checklist for Phase 4 admin metrics.
-```
-
 ## Troubleshooting
 
 ### `node` or `npm` not found
@@ -376,10 +417,12 @@ Possible reasons:
 
 If you run out of hosted API credits later, you can add a local-model provider path as a follow-on enhancement. A practical next step would be routing fallback generation to a local OpenAI-compatible endpoint such as Ollama or another self-hosted model gateway. That is not wired in yet, but the current `local_fallback` branch gives you a clear insertion point for it.
 
-## Next-Phase Hardening Roadmap
+## Room For Improvement
 
-- Authentication: move seeded users to real user identities (managed IdP or your own user DB with password hashing + reset flow).
-- Authorization: extend RBAC with tenant/project-scoped roles and admin audit actions.
-- Session security: short-lived access tokens, rotating refresh tokens, revoke-on-password-change.
-- Data security: encrypt sensitive uploads at rest and enforce strict per-tenant dataset isolation.
-- LLM quality: add evaluation datasets, prompt/version tracking, and offline regression checks for answer quality.
+- Authentication: replace seeded local users with a real identity store or managed IdP.
+- Authorization: extend RBAC to project- or dataset-scope policies without duplicating checks across routes.
+- Ingestion: move background indexing to explicit job records with retry state and operator visibility.
+- Storage: keep local storage for development, but standardize production on managed object storage.
+- RAG: move from container-local Chroma to a shared vector store when multi-instance retrieval consistency matters.
+- Security: move frontend token storage from `localStorage` to a safer cookie-based flow when the auth model is upgraded.
+- Observability: add durable metrics, request dashboards, and audit log search for production support.
