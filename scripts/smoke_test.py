@@ -1,7 +1,17 @@
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
+
+os.environ.setdefault("ENVIRONMENT", "development")
+os.environ.setdefault("JWT_SECRET_KEY", "smoke-test-secret")
+os.environ.setdefault(
+    "DATABASE_URL",
+    f"sqlite:///{Path(tempfile.gettempdir(), 'ai_ops_copilot_smoke.db').as_posix()}",
+)
+os.environ.setdefault("STORAGE_PROVIDER", "local")
+os.environ.setdefault("RAG_ENABLED", "false")
 
 from fastapi.testclient import TestClient
 

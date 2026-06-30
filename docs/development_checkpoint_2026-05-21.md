@@ -39,7 +39,7 @@
 
 ## Deployment Implications
 - `requirements.txt` changed to include storage dependency updates; deployment images must be rebuilt.
-- CI backend workflow changed; pipeline behavior may differ for dependency/readiness checks.
+- CI backend workflow changed; pipeline bqehavior may differ for dependency/readiness checks.
 - Secret-management posture improved by removing tracked `.env.prod`; deployment environments must supply required variables through secure runtime configuration.
 - Request context and RBAC path changes can alter authorization outcomes; staged rollout with smoke tests is recommended.
 

@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,12 +19,33 @@ from app.services.runtime_metrics import runtime_metrics
 settings = get_settings()
 setup_logging(settings)
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if settings.storage_provider == "local":
+        os.makedirs(settings.data_dir, exist_ok=True)
+    os.makedirs(settings.vector_db_dir, exist_ok=True)
+    init_db()
+    logging.getLogger("app.startup").info(
+        "Startup complete environment=%s storage_provider=%s vector_db_dir=%s database_backend=%s",
+        settings.environment,
+        settings.storage_provider,
+        settings.vector_db_dir,
+        "sqlite" if settings.database_url.startswith("sqlite") else "postgres",
+    )
+    try:
+        yield
+    finally:
+        logging.getLogger("app.shutdown").info("Shutdown complete")
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     docs_url="/docs" if settings.docs_enabled else None,
     redoc_url="/redoc" if settings.docs_enabled else None,
     openapi_url="/openapi.json" if settings.docs_enabled else None,
+    lifespan=lifespan,
 )
 register_exception_handlers(app)
 app.add_middleware(
@@ -45,22 +67,6 @@ def home():
         "docs_url": "/docs" if settings.docs_enabled else None,
     }
 
-
-@app.on_event("startup")
-def startup_checks():
-    if settings.storage_provider == "local":
-        os.makedirs(settings.data_dir, exist_ok=True)
-    os.makedirs(settings.vector_db_dir, exist_ok=True)
-    init_db()
-    logging.getLogger("app.startup").info(
-        "Startup complete environment=%s storage_provider=%s vector_db_dir=%s database_backend=%s",
-        settings.environment,
-        settings.storage_provider,
-        settings.vector_db_dir,
-        "sqlite" if settings.database_url.startswith("sqlite") else "postgres",
-    )
-
-
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     if request.url.path in ["/health", "/healthz", "/readyz"]:
@@ -71,26 +77,31 @@ async def log_requests(request: Request, call_next):
     set_request_id(request_id)
     remaining, window_seconds = enforce_rate_limit(request)
     start_time = time.perf_counter()
+    response = None
     try:
         response = await call_next(request)
+        return response
     finally:
-        set_request_id(None)
-    duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        status_code = response.status_code if response is not None else 500
 
-    logging.getLogger("app.request").info(
-        "request_id=%s method=%s path=%s status_code=%s duration_ms=%s",
-        request_id,
-        request.method,
-        request.url.path,
-        response.status_code,
-        duration_ms,
-    )
-    runtime_metrics.record_request(request.url.path, response.status_code, duration_ms)
-    response.headers["X-Request-ID"] = request_id
-    response.headers["X-RateLimit-Remaining"] = str(remaining)
-    response.headers["X-RateLimit-Window"] = str(window_seconds)
-    response.headers["X-Response-Time-ms"] = str(duration_ms)
-    return response
+        logging.getLogger("app.request").info(
+            "request_id=%s method=%s path=%s status_code=%s duration_ms=%s",
+            request_id,
+            request.method,
+            request.url.path,
+            status_code,
+            duration_ms,
+        )
+        runtime_metrics.record_request(request.url.path, status_code, duration_ms)
+
+        if response is not None:
+            response.headers["X-Request-ID"] = request_id
+            response.headers["X-RateLimit-Remaining"] = str(remaining)
+            response.headers["X-RateLimit-Window"] = str(window_seconds)
+            response.headers["X-Response-Time-ms"] = str(duration_ms)
+
+        set_request_id(None)
 
 
 app.include_router(audit.router)

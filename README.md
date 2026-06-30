@@ -2,14 +2,6 @@
 
 AI Ops Copilot is a full-stack demo application for secure dataset upload, role-based access control, auditability, and AI-assisted analysis.
 
-## Strategic Direction
-
-This project is being refined toward an **Enterprise AI Operations and Knowledge Copilot Platform**.
-
-Implementation blueprint:
-
-- [Enterprise Architecture Blueprint](docs/architecture/enterprise_blueprint.md)
-
 ## Stack
 
 - Backend: FastAPI
@@ -50,29 +42,9 @@ FastAPI backend (modular monolith)
     +--> vector_db/ Chroma data
 ```
 
-## Future-State Architecture
+Implementation blueprint:
 
-The current architecture is intentionally simple. The practical production path keeps the same modular-monolith backend shape while hardening the surrounding services.
-
-```text
-React SPA
-   |
-   |  HTTPS + JWT / refresh flow
-   v
-FastAPI API
-   |- Auth / RBAC / tenant isolation
-   |- Dataset APIs
-   |- Query + chat orchestration
-   |- Audit + runtime metrics
-   |- Ingestion jobs
-   |
-   +--> PostgreSQL for users, datasets, sessions, audit
-   +--> Object storage for uploaded files
-   +--> Shared vector store for RAG context
-   +--> External LLM provider with fallback path
-```
-
-This keeps the codebase maintainable while leaving room for scale without rewriting the application around a new framework.
+- [Enterprise Architecture Blueprint](docs/architecture/enterprise_blueprint.md)
 
 ## Project Layout
 
@@ -103,57 +75,64 @@ Important backend variables:
 - `RAG_ENABLED`
 - `CORS_ALLOWED_ORIGINS`
 
+`OPENROUTER_API_KEY` is optional for local startup. If it is unset, the app still works and returns the built-in local fallback analysis path.
+
 For local frontend development, use `frontend/.env.example` if you want to override the API URL at build time.
 
 For Docker and Azure frontend hosting, runtime values are injected through `runtime-config.js`, so you do not need to rebuild the frontend just to change the backend URL.
 
-## Local Development
+## Quick Start
 
-### Backend
+### Docker
+
+This is the supported default path.
+
+1. Copy the example environment file:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+2. Start the stack:
+
+```powershell
+docker compose up --build
+```
+
+3. Open the app:
+
+- Frontend: `http://localhost:8080`
+- Backend API: `http://localhost:8000`
+- Swagger: `http://localhost:8000/docs`
+- Readiness: `http://localhost:8000/readyz`
+
+The Compose setup uses SQLite by default and persists local runtime data in:
+
+- `./data`
+- `./vector_db`
+- `./logs`
+
+### Local Development
 
 Recommended Python: `3.11` or `3.12`
+
+Backend:
 
 ```powershell
 uv venv .venv
 uv pip install --python .venv\Scripts\python.exe -r requirements.txt
-.venv\Scripts\python.exe -m uvicorn app.main:app --reload
-```
-
-Optional RAG dependencies:
-
-```powershell
 uv pip install --python .venv\Scripts\python.exe -r requirements-rag.txt
+scripts\start-backend-local.cmd
 ```
 
-### Frontend
+Frontend:
 
 ```powershell
 $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 cd frontend
 npm install
-npm run dev
-```
-
-## Manual Run + Test
-
-### Run backend locally
-
-```powershell
-$env:DATABASE_URL = 'sqlite:///ai_ops_copilot_local.db'
-$env:ENVIRONMENT = 'development'
-$env:STORAGE_PROVIDER = 'local'
-$env:RAG_ENABLED = 'false'
-$env:JWT_SECRET_KEY = 'local-dev-secret'
-.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-### Run frontend locally
-
-```powershell
-$env:Path = 'C:\Program Files\nodejs;' + $env:Path
-cd frontend
-npm install
-npm run dev -- --host 127.0.0.1 --port 5173
+cd ..
+scripts\start-frontend-local.cmd
 ```
 
 ### Manual verification commands
@@ -190,6 +169,8 @@ cd f:\Python_learning\ai_ops_copilot
 .venv\Scripts\python.exe scripts\smoke_test.py
 ```
 
+The smoke test forces a local SQLite configuration so it does not depend on a developer's personal `.env`.
+
 This checks:
 
 - `/`
@@ -201,23 +182,16 @@ This checks:
 
 ## Docker
 
-### Local container run with Compose
+`docker-compose.yml` is the source of truth for local startup. The default stack runs:
 
-```powershell
-docker compose up --build
-```
+- `backend`: FastAPI + SQLite-backed local persistence
+- `frontend`: Nginx serving the built React app with runtime API configuration
 
-Services:
+Health model:
 
-- Frontend: `http://localhost:8080`
-- Backend API: `http://localhost:8000`
-- Swagger: `http://localhost:8000/docs`
-
-The backend container stores uploaded files and vector data in mounted local folders:
-
-- `./data`
-- `./vector_db`
-- `./logs`
+- `GET /health`: lightweight liveness
+- `GET /readyz`: dependency-aware readiness
+- Compose waits for backend readiness before starting the frontend
 
 ## Azure Hosting
 
@@ -269,7 +243,7 @@ Add these repository secrets before running deployment:
 - `.env` is already ignored by git and should never be committed.
 - Avoid running `docker compose config` in shared logs because it prints resolved environment values.
 - Use `docker compose config --no-interpolate` when you only need structural validation.
-- A dedicated GitHub Actions workflow (`secret-scan.yml`) now scans commits/PRs for leaked secrets.
+- A dedicated GitHub Actions workflow (`secret-scan.yml`) scans commits and pull requests for leaked secrets.
 
 ## API and UI Behavior
 
@@ -383,6 +357,7 @@ Built-in improvements:
 - `alice / alice123` (`analyst`)
 - `bob / bob123` (`viewer`)
 - `charlie / charlie123` (`analyst`)
+- `nitin / nitin123` (`admin`)
 
 ## Troubleshooting
 
@@ -393,6 +368,25 @@ Node may be installed but not in the current PowerShell session:
 ```powershell
 $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 ```
+
+### `uvicorn` fails locally
+
+Use the repo-local launcher instead of a bare `uvicorn` command:
+
+```powershell
+scripts\start-backend-local.cmd
+```
+
+This ensures:
+
+- the project virtualenv is used
+- the ASGI target is `app.main:app`
+- local startup uses the supported local SQLite path
+
+If `uvicorn app.main:app --reload` still fails, the usual causes are:
+
+- `uvicorn` is not on your shell `PATH`
+- port `8000` is already occupied by another local process or Docker/WSL port forwarding
 
 ### Live LLM falls back every time
 
@@ -413,10 +407,6 @@ Possible reasons:
 - the embedding model is not cached locally
 - the uploaded dataset has not been indexed yet
 
-## Optional Future Extension
-
-If you run out of hosted API credits later, you can add a local-model provider path as a follow-on enhancement. A practical next step would be routing fallback generation to a local OpenAI-compatible endpoint such as Ollama or another self-hosted model gateway. That is not wired in yet, but the current `local_fallback` branch gives you a clear insertion point for it.
-
 ## Room For Improvement
 
 - Authentication: replace seeded local users with a real identity store or managed IdP.
@@ -426,3 +416,4 @@ If you run out of hosted API credits later, you can add a local-model provider p
 - RAG: move from container-local Chroma to a shared vector store when multi-instance retrieval consistency matters.
 - Security: move frontend token storage from `localStorage` to a safer cookie-based flow when the auth model is upgraded.
 - Observability: add durable metrics, request dashboards, and audit log search for production support.
+- Database migrations: the current app keeps lightweight in-process schema evolution in `init_db()`. Replacing it with Alembic or a similar migration tool is reasonable future work, but it would touch startup behavior and upgrade paths, so it was deferred in this hardening pass to avoid an unnecessary compatibility risk.

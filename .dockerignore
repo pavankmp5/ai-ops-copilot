@@ -24,6 +24,7 @@ node_modules/
 logs/
 vector_db/
 data/
+.codex_tmp_backend_smoke_logs/
 
 # Git
 .git

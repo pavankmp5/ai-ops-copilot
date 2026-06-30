@@ -17,7 +17,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             exc.status_code,
             exc.detail,
         )
-        return JSONResponse(
+        response = JSONResponse(
             status_code=exc.status_code,
             content={
                 "error": {
@@ -28,6 +28,8 @@ def register_exception_handlers(app: FastAPI) -> None:
                 }
             },
         )
+        response.headers["X-Request-ID"] = str(request_id)
+        return response
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -37,7 +39,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             request_id,
             request.url.path,
         )
-        return JSONResponse(
+        response = JSONResponse(
             status_code=500,
             content={
                 "error": {
@@ -48,3 +50,5 @@ def register_exception_handlers(app: FastAPI) -> None:
                 }
             },
         )
+        response.headers["X-Request-ID"] = str(request_id)
+        return response

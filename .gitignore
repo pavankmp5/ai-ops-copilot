@@ -4,9 +4,13 @@ __pycache__/
 *.sqlite3
 *.db
 .env
+.env.*
+!.env.example
+!frontend/.env.example
 logs/
 vector_db/
 data/
+.codex_tmp_backend_smoke_logs/
 frontend/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
@@ -16,4 +20,3 @@ frontend/vite.config.d.ts
 .mypy_cache/
 .ruff_cache/
 .DS_Store
-.env.prod
